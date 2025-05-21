@@ -37,6 +37,11 @@ CATS_RUNTIME_API void cats_trace_instrument_dealloc(
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
+CATS_RUNTIME_API void cats_trace_instrument_access(
+    uint32_t call_id, void *address, bool is_write,
+    const char *funcname, const char *filename, uint32_t line, uint32_t col
+);
+
 CATS_RUNTIME_API void cats_trace_instrument_read(
     uint32_t call_id, void *address,
     const char *funcname, const char *filename, uint32_t line, uint32_t col

@@ -11,6 +11,8 @@
 
 #include <set>
 
+#include "../runtime/cats_runtime.h"
+
 using namespace llvm;
 
 std::set<std::string> alloc_names = {
@@ -34,6 +36,8 @@ std::set<std::string> names = {
     "_Znwm",  "free",    "_ZdlPv", "_ZdaPv",
 };
 
+static long g_cats_instrument_call_id = 0;
+
 namespace {
 class CallTracker : public FunctionPass {
 public:
@@ -46,9 +50,10 @@ public:
 
     // Create instrumentation function definitions
     FunctionCallee InstrumentFunc = M->getOrInsertFunction(
-        "cats_instrument_alloc",
+        "cats_trace_instrument_alloc",
         FunctionType::get(Type::getVoidTy(M->getContext()),
-                          {PointerType::getUnqual(M->getContext()), /*name*/
+                          {Type::getInt64Ty(M->getContext()),       /*call_id*/
+                           PointerType::getUnqual(M->getContext()), /*name*/
                            PointerType::getUnqual(M->getContext()), /*value*/
                            Type::getInt64Ty(M->getContext()),       /*size*/
                            PointerType::getUnqual(M->getContext()), /*funcname*/
@@ -57,9 +62,10 @@ public:
                            Type::getInt32Ty(M->getContext())},      /*col*/
                           false));
     FunctionCallee InstrumentDeallocFunc = M->getOrInsertFunction(
-        "cats_instrument_dealloc",
+        "cats_trace_instrument_dealloc",
         FunctionType::get(Type::getVoidTy(M->getContext()),
-                          {PointerType::getUnqual(M->getContext()), /*value*/
+                          {Type::getInt64Ty(M->getContext()),       /*call_id*/
+                           PointerType::getUnqual(M->getContext()), /*value*/
                            PointerType::getUnqual(M->getContext()), /*funcname*/
                            PointerType::getUnqual(M->getContext()), /*filename*/
                            Type::getInt32Ty(M->getContext()),       /*line*/
@@ -83,8 +89,8 @@ public:
             if (CallInst *Call2 = dyn_cast<CallInst>(&*Inst)) {
               Function *Callee2 = Call2->getCalledFunction();
               if (Callee2 &&
-                  (Callee2->getName() == "cats_instrument_alloc" ||
-                   Callee2->getName() == "cats_instrument_dealloc")) {
+                  (Callee2->getName() == "cats_trace_instrument_alloc" ||
+                   Callee2->getName() == "cats_trace_instrument_dealloc")) {
                 --Inst;
                 continue;
               }
@@ -143,6 +149,11 @@ public:
               }
             }
 
+            // Crate a call ID constant
+            Constant *CallID =
+                ConstantInt::get(Type::getInt64Ty(M->getContext()),
+                                 g_cats_instrument_call_id++);
+
             // Create a global string constant for the filename
             Constant *FilenameStr =
                 ConstantDataArray::getString(M->getContext(), Filename);
@@ -166,7 +177,7 @@ public:
             Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
                 FilenameStr->getType(), FuncnameGV, Indices, true);
 
-            // Create a call to cats_instrument_* with filename, line, and
+            // Create a call to cats_trace_instrument_* with filename, line, and
             // column numbers
             if (alloc_names.find(std::string{Callee->getName()}) !=
                 alloc_names.end()) {
@@ -176,6 +187,7 @@ public:
               Constant *ValnamePtr = ConstantExpr::getGetElementPtr(
                   FilenameStr->getType(), ValnameGV, Indices, true);
               Value *Args[] = {
+                  CallID,
                   ValnamePtr,
                   Call,
                   Call->getArgOperand(0),
@@ -186,6 +198,7 @@ public:
               Builder.CreateCall(InstrumentFunc, Args);
             } else {
               Value *Args[] = {
+                  CallID,
                   Call->getArgOperand(0), FuncnamePtr, FilenamePtr,
                   ConstantInt::get(Type::getInt32Ty(M->getContext()), Line),
                   ConstantInt::get(Type::getInt32Ty(M->getContext()), Col)};
@@ -240,10 +253,12 @@ public:
 
     // Create instrumentation function definitions
     FunctionCallee InstrumentFunc = M->getOrInsertFunction(
-        "cats_instrument_access",
+        "cats_trace_instrument_access",
         FunctionType::get(Type::getVoidTy(M->getContext()),
-                          {PointerType::getUnqual(M->getContext()), /*value*/
+                          {Type::getInt64Ty(M->getContext()),       /*call_id*/
+                           PointerType::getUnqual(M->getContext()), /*value*/
                            Type::getInt1Ty(M->getContext()),        /*is_write*/
+                           PointerType::getUnqual(M->getContext()), /*funcname*/
                            PointerType::getUnqual(M->getContext()), /*filename*/
                            Type::getInt32Ty(M->getContext()),       /*line*/
                            Type::getInt32Ty(M->getContext())},      /*col*/
@@ -279,7 +294,7 @@ public:
         // Check if called before
         if (CallInst *Call2 = dyn_cast<CallInst>(&*Inst)) {
           Function *Callee2 = Call2->getCalledFunction();
-          if (Callee2 && Callee2->getName() == "cats_instrument_access") {
+          if (Callee2 && Callee2->getName() == "cats_trace_instrument_access") {
             --Inst;
             continue;
           }
@@ -319,24 +334,37 @@ public:
           }
         }
 
+        // Create a call ID constant
+        Constant *CallID =
+            ConstantInt::get(Type::getInt64Ty(M->getContext()),
+                             g_cats_instrument_call_id++);
+
         // Create a global string constant for the filename
         Constant *FilenameStr =
             ConstantDataArray::getString(M->getContext(), Filename);
+        Constant *FuncnameStr = ConstantDataArray::getString(
+            M->getContext(), F.getName());
         GlobalVariable *FilenameGV = new GlobalVariable(
             *M, FilenameStr->getType(), true, GlobalValue::PrivateLinkage,
             FilenameStr, "filename");
+        GlobalVariable *FuncnameGV = new GlobalVariable(
+            *M, FuncnameStr->getType(), true, GlobalValue::PrivateLinkage,
+            FuncnameStr, "funcname");
 
         // Create a pointer to the first character of the string
         Constant *Zero = ConstantInt::get(Type::getInt32Ty(M->getContext()), 0);
         Constant *Indices[] = {Zero, Zero};
         Constant *FilenamePtr = ConstantExpr::getGetElementPtr(
             FilenameStr->getType(), FilenameGV, Indices, true);
+        Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
+            FilenameStr->getType(), FuncnameGV, Indices, true);
 
-        // Create a call to cats_instrument_access with filename, line, and
-        // column numbers
+        // Create a call to cats_trace_instrument_access with filename, line,
+        // and column numbers
         Value *Args[] = {
+            CallID,
             val, ConstantInt::get(Type::getInt1Ty(M->getContext()), is_write),
-            FilenamePtr,
+            FuncnamePtr, FilenamePtr,
             ConstantInt::get(Type::getInt32Ty(M->getContext()), Line),
             ConstantInt::get(Type::getInt32Ty(M->getContext()), Col)};
         Builder.CreateCall(InstrumentFunc, Args);

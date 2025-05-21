@@ -1,5 +1,6 @@
 #include "cats_runtime.h"
 
+#include <iostream>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -85,6 +86,9 @@ protected:
         if (it == this->_recorded_calls.end()) {
             this->_recorded_calls[call_id] = std::vector<std::string>();
             this->_recorded_calls[call_id].push_back(stack_id);
+            std::cout << "First time recording call_id " << call_id
+                      << " with stack id " << stack_id << std::endl;
+            std::cout.flush();
             return false;
         } else {
             auto val = it->second;
@@ -95,6 +99,9 @@ protected:
             }
             it->second.push_back(stack_id);
         }
+        std::cout << "First time recording call_id " << call_id
+                    << " with stack id " << stack_id << std::endl;
+        std::cout.flush();
         return false;
     }
 
@@ -137,6 +144,10 @@ public:
             !buffer_name || !*buffer_name
         ) ? "$UNKNOWN$" : buffer_name;
 
+        std::cout << "Allocating " << buffer_name_str
+                  << " at " << address << " of size " << size << std::endl;
+        std::cout.flush();
+
         Allocation_Event_Args args;
         args.buffer_name = buffer_name_str;
         args.size = size;
@@ -163,6 +174,11 @@ public:
         if (it != this->_allocations.end()) {
             Deallocation_Event_Args args;
             args.buffer_name = it->second.first;
+
+            std::cout << "Deallocating " << args.buffer_name
+                      << " at " << address << std::endl;
+            std::cout.flush();
+
             this->record_event(
                 EVENT_TYPE_DEALLOCATION, &args,
                 funcname, filename, line, col
@@ -197,6 +213,12 @@ public:
             Access_Event_Args args;
             args.buffer_name = buffer_name;
             args.is_write = is_write;
+
+            std::cout << (is_write ? "Writing" : "Reading")
+                      << " " << buffer_name
+                      << " at " << address << std::endl;
+            std::cout.flush();
+
             this->record_event(
                 EVENT_TYPE_ACCESS, &args,
                 funcname, filename, line, col
@@ -279,7 +301,8 @@ public:
         }
 
         if (this->_scope_stack.empty() || this->_scope_stack.back() != scope_id) {
-            printf("Warning: Exiting scope %d not found, this is likely a catastrophic error and will cause an incorrect trace\n", scope_id);
+            printf("Warning: Exiting scope %d not found.\n", scope_id);
+            printf("  This is likely an error leading to an incorrect trace\n");
         } else {
             this->_scope_stack.pop_back();
         }
@@ -312,7 +335,8 @@ public:
                 ofs << "\"col\": " << event.debug_info.col;
                 switch (event.event_type) {
                     case EVENT_TYPE_ALLOCATION: {
-                        Allocation_Event_Args *args = (Allocation_Event_Args *) event.args;
+                        Allocation_Event_Args *args =
+                            (Allocation_Event_Args *) event.args;
                         ofs << ", \"type\": \"allocation\", ";
                         ofs << "\"buffer_name\": \"";
                         ofs << args->buffer_name << "\", ";
@@ -320,14 +344,16 @@ public:
                         break;
                     }
                     case EVENT_TYPE_DEALLOCATION: {
-                        Deallocation_Event_Args *args = (Deallocation_Event_Args *) event.args;
+                        Deallocation_Event_Args *args =
+                            (Deallocation_Event_Args *) event.args;
                         ofs << ", \"type\": \"deallocation\", ";
                         ofs << "\"buffer_name\": \"";
                         ofs << args->buffer_name << "\"";
                         break;
                     }
                     case EVENT_TYPE_ACCESS: {
-                        Access_Event_Args *args = (Access_Event_Args *) event.args;
+                        Access_Event_Args *args =
+                            (Access_Event_Args *) event.args;
                         ofs << ", \"type\": \"access\", ";
                         ofs << "\"mode\": ";
                         ofs << (args->is_write ? "\"w\"" : "\"r\"") << ", ";
@@ -336,14 +362,16 @@ public:
                         break;
                     }
                     case EVENT_TYPE_SCOPE_ENTRY: {
-                        Scope_Entry_Event_Args*args = (Scope_Entry_Event_Args *) event.args;
+                        Scope_Entry_Event_Args*args =
+                            (Scope_Entry_Event_Args *) event.args;
                         ofs << ", \"type\": \"scope_entry\", ";
                         ofs << "\"scope_type\": " << args->type << ", ";
                         ofs << "\"id\": " << args->scope_id;
                         break;
                     }
                     case EVENT_TYPE_SCOPE_EXIT: {
-                        Scope_Exit_Event_Args *args = (Scope_Exit_Event_Args *) event.args;
+                        Scope_Exit_Event_Args *args =
+                            (Scope_Exit_Event_Args *) event.args;
                         ofs << ", \"type\": \"scope_exit\", ";
                         ofs << "\"id\": " << args->scope_id;
                         break;
@@ -387,6 +415,15 @@ void cats_trace_instrument_dealloc(
 ) {
     g_cats_trace.instrument_dealloc(
         call_id, address, funcname, filename, line, col
+    );
+}
+
+void cats_trace_instrument_access(
+    uint32_t call_id, void *address, bool is_write,
+    const char *funcname, const char *filename, uint32_t line, uint32_t col
+) {
+    g_cats_trace.instrument_access(
+        call_id, address, is_write, funcname, filename, line, col
     );
 }
 
