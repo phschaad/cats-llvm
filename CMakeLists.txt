@@ -20,3 +20,4 @@ if(NOT LLVM_ENABLE_RTTI)
 endif()
 
 add_subdirectory(passes)
+add_subdirectory(runtime)
