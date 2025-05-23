@@ -17,13 +17,18 @@ extern "C" {
   #define CATS_RUNTIME_API __attribute__((visibility("default")))
 #endif
 
-typedef enum {
-    CATS_SCOPE_TYPE_FUNCTION = 0,
-    CATS_SCOPE_TYPE_LOOP = 1,
-    CATS_SCOPE_TYPE_CONDITIONAL = 2,
-    CATS_SCOPE_TYPE_PARALLEL = 3,
-    CATS_SCOPE_TYPE_UNSTRUCTURED = 4
-} CATS_SCOPE_TYPE;
+#define CATS_EVENT_TYPE_ALLOCATION      0
+#define CATS_EVENT_TYPE_DEALLOCATION    1
+#define CATS_EVENT_TYPE_ACCESS          2
+#define CATS_EVENT_TYPE_SCOPE_ENTRY     3
+#define CATS_EVENT_TYPE_SCOPE_EXIT      4
+
+#define CATS_SCOPE_TYPE_FUNCTION        0
+#define CATS_SCOPE_TYPE_LOOP            1
+#define CATS_SCOPE_TYPE_CONDITIONAL     2
+#define CATS_SCOPE_TYPE_PARALLEL        3
+#define CATS_SCOPE_TYPE_UNSTRUCTURED    4
+
 
 CATS_RUNTIME_API void cats_trace_reset();
 
@@ -53,7 +58,7 @@ CATS_RUNTIME_API void cats_trace_instrument_write(
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_scope_entry(
-    uint32_t call_id, uint32_t scope_id, CATS_SCOPE_TYPE scope_type,
+    uint32_t call_id, uint32_t scope_id, uint8_t scope_type,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 

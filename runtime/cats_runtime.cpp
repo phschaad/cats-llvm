@@ -1,72 +1,80 @@
 #include "cats_runtime.h"
 
-#include <iostream>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <deque>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <sstream>
 #include <vector>
 
-#define CATS_TRACE_BUFFER_SIZE 1024
+#define CATS_RUNTIME_DEBUG              1
+#define CATS_RUNTIME_PRINT_ALLOCATIONS  1
+#define CATS_RUNTIME_PRINT_ACCESSES     0
+#define CATS_RUNTIME_PRINT_SCOPES       0
+
+#define CATS_TRACE_FILE_NAME_SIZE       256
+#define CATS_TRACE_FUNC_NAME_SIZE       64
+#define CATS_TRACE_BUFFER_NAME_SIZE     64
 
 namespace cats {
 
-enum CATS_Event_Type {
-    EVENT_TYPE_ALLOCATION,
-    EVENT_TYPE_DEALLOCATION,
-    EVENT_TYPE_ACCESS,
-    EVENT_TYPE_SCOPE_ENTRY,
-    EVENT_TYPE_SCOPE_EXIT,
-};
-
 struct CATS_Debug_Info {
-    std::string funcname;
-    std::string filename;
+    char funcname[CATS_TRACE_FUNC_NAME_SIZE];
+    char filename[CATS_TRACE_FILE_NAME_SIZE];
     uint32_t line;
     uint32_t col;
 };
 
 struct CATS_Event {
-    CATS_Event_Type event_type;
+    uint8_t event_type;
     CATS_Debug_Info debug_info;
     const void *args;
 };
 
 struct Allocation_Event_Args {
-    std::string buffer_name;
+    char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
     size_t size;
 };
 
 struct Deallocation_Event_Args {
-    std::string buffer_name;
+    char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
 };
 
 struct Access_Event_Args {
-    std::string buffer_name;
+    char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
     bool is_write;
 };
 
 struct Scope_Entry_Event_Args {
     uint32_t scope_id;
-    CATS_SCOPE_TYPE type;
+    uint8_t type;
 };
 
 struct Scope_Exit_Event_Args {
     uint32_t scope_id;
 };
 
+struct CATS_Alloc_Info {
+    const char *buffer_name;
+    size_t size;
+};
+
 class CATS_Trace {
 protected:
+    uint64_t n_events = 0;
+
     std::mutex _mutex;
 
-    std::deque<int> _scope_stack;
-    std::map<const void *, std::pair<std::string, size_t>> _allocations;
-    std::map<uint32_t, std::vector<std::string>> _recorded_calls;
+    std::deque<uint32_t> _scope_stack;
+    std::map<const void *, CATS_Alloc_Info> _allocations;
+    std::map<uint32_t, std::vector<const char *>> _recorded_calls;
     std::deque<CATS_Event> _events;
 
+    /*
     std::string get_stack_identifier() {
         std::stringstream ss;
         auto it = this->_scope_stack.begin();
@@ -84,11 +92,8 @@ protected:
         auto it = this->_recorded_calls.find(call_id);
         auto stack_id = this->get_stack_identifier();
         if (it == this->_recorded_calls.end()) {
-            this->_recorded_calls[call_id] = std::vector<std::string>();
+            this->_recorded_calls[call_id] = std::vector<const char *>();
             this->_recorded_calls[call_id].push_back(stack_id);
-            std::cout << "First time recording call_id " << call_id
-                      << " with stack id " << stack_id << std::endl;
-            std::cout.flush();
             return false;
         } else {
             auto val = it->second;
@@ -99,23 +104,39 @@ protected:
             }
             it->second.push_back(stack_id);
         }
-        std::cout << "First time recording call_id " << call_id
-                    << " with stack id " << stack_id << std::endl;
-        std::cout.flush();
         return false;
     }
+    */
 
-    void record_event(CATS_Event_Type event_type, const void *args,
+    void record_event(uint8_t event_type, const void *args,
                       const char *funcname, const char *filename,
                       uint32_t line, uint32_t col) {
         CATS_Event event;
         event.event_type = event_type;
         event.args = args;
-        event.debug_info.funcname = funcname ? funcname : "";
-        event.debug_info.filename = filename ? filename : "";
+
+        if (!funcname || !*funcname)
+            funcname = "$UNKNOWN$";
+        strncpy(event.debug_info.funcname, funcname,
+                CATS_TRACE_FUNC_NAME_SIZE - 1);
+        event.debug_info.funcname[CATS_TRACE_FUNC_NAME_SIZE - 1] = '\0';
+
+        if (!filename || !*filename)
+            filename = "$UNKNOWN$";
+        strncpy(event.debug_info.filename, filename,
+                CATS_TRACE_FILE_NAME_SIZE - 1);
+        event.debug_info.filename[CATS_TRACE_FILE_NAME_SIZE - 1] = '\0';
+
         event.debug_info.line = line;
         event.debug_info.col = col;
         this->_events.push_back(event);
+
+#if CATS_RUNTIME_DEBUG
+        if (this->_events.size() % 1'000'000 == 0) {
+            std::cout << "Recorded " << this->_events.size() << " events"
+                      << std::endl;
+        }
+#endif
     }
 
 public:
@@ -136,51 +157,60 @@ public:
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        if (this->already_recorded(call_id)) {
-            return;
-        }
-
-        std::string buffer_name_str = (
-            !buffer_name || !*buffer_name
-        ) ? "$UNKNOWN$" : buffer_name;
-
-        std::cout << "Allocating " << buffer_name_str
-                  << " at " << address << " of size " << size << std::endl;
-        std::cout.flush();
-
         Allocation_Event_Args args;
-        args.buffer_name = buffer_name_str;
+
+        if (!buffer_name || !*buffer_name)
+            buffer_name = "$UNKNOWN$";
+
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
+        std::cout << "Allocating " << buffer_name
+                  << " at " << address << " in " << funcname << " (" << size
+                  << ") bytes" << std::endl;
+#endif
+
+        strncpy(args.buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1);
+        args.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
+
         args.size = size;
         this->record_event(
-            EVENT_TYPE_ALLOCATION, &args,
+            CATS_EVENT_TYPE_ALLOCATION, &args,
             funcname, filename, line, col
         );
 
-        this->_allocations[address] = std::make_pair(buffer_name_str, size);
+        CATS_Alloc_Info alloc_info;
+        alloc_info.buffer_name = args.buffer_name;
+        alloc_info.size = size;
+        this->_allocations[address] = alloc_info;
     }
 
     void instrument_dealloc(
-        int call_id,
+        uint32_t call_id,
         void *address, const char *funcname, const char *filename,
-        int line, int col
+        uint32_t line, uint32_t col
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        if (this->already_recorded(call_id)) {
-            return;
-        }
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
+        std::cout << "Deallocating at " << address
+                    << " in " << funcname << std::endl;
+#endif
 
         auto it = this->_allocations.find(address);
         if (it != this->_allocations.end()) {
             Deallocation_Event_Args args;
-            args.buffer_name = it->second.first;
+            strncpy(
+                args.buffer_name, it->second.buffer_name,
+                CATS_TRACE_BUFFER_NAME_SIZE - 1
+            );
+            args.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
 
-            std::cout << "Deallocating " << args.buffer_name
-                      << " at " << address << std::endl;
-            std::cout.flush();
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
+            std::cout << "Deallocating " << it->second.buffer_name
+                        << std::endl;
+#endif
 
             this->record_event(
-                EVENT_TYPE_DEALLOCATION, &args,
+                CATS_EVENT_TYPE_DEALLOCATION, &args,
                 funcname, filename, line, col
             );
             this->_allocations.erase(it);
@@ -194,33 +224,37 @@ public:
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        if (this->already_recorded(call_id)) {
-            return;
-        }
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ACCESSES
+        std::cout << "Accessing " << (is_write ? "write" : "read")
+                    << " at " << address << " in " << funcname
+                    << std::endl;
+#endif
 
-        std::string buffer_name;
+        const char *buffer_name = nullptr;
         auto it = this->_allocations.lower_bound(address);
         if (it != this->_allocations.end() && it->first == address) {
-            buffer_name = it->second.first;
+            buffer_name = it->second.buffer_name;
         } else if (it != this->_allocations.begin()) {
             --it;
-            if (address < ((char *) it->first) + it->second.second) {
-                buffer_name = it->second.first;
+            if (address < ((char *) it->first) + it->second.size) {
+                buffer_name = it->second.buffer_name;
             }
         }
 
-        if (!buffer_name.empty()) {
+        if (buffer_name && *buffer_name) {
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ACCESSES
+            std::cout << "Accessing " << buffer_name << std::endl;
+#endif
+
             Access_Event_Args args;
-            args.buffer_name = buffer_name;
+            strncpy(
+                args.buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
+            );
+            args.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
             args.is_write = is_write;
 
-            std::cout << (is_write ? "Writing" : "Reading")
-                      << " " << buffer_name
-                      << " at " << address << std::endl;
-            std::cout.flush();
-
             this->record_event(
-                EVENT_TYPE_ACCESS, &args,
+                CATS_EVENT_TYPE_ACCESS, &args,
                 funcname, filename, line, col
             );
         }
@@ -248,20 +282,16 @@ public:
 
     void instrument_scope_entry(
         uint32_t call_id,
-        uint32_t scope_id, CATS_SCOPE_TYPE type, const char *funcname,
+        uint32_t scope_id, uint8_t type, const char *funcname,
         const char *filename, uint32_t line, uint32_t col
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
-
-        if (this->already_recorded(call_id)) {
-            return;
-        }
 
         Scope_Entry_Event_Args args;
         args.scope_id = scope_id;
         args.type = type;
         this->record_event(
-            EVENT_TYPE_SCOPE_ENTRY, &args,
+            CATS_EVENT_TYPE_SCOPE_ENTRY, &args,
             funcname, filename, line, col
         );
 
@@ -275,14 +305,10 @@ public:
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        if (this->already_recorded(call_id)) {
-            return;
-        }
-
         Scope_Exit_Event_Args args;
         args.scope_id = scope_id;
         this->record_event(
-            EVENT_TYPE_SCOPE_EXIT, &args,
+            CATS_EVENT_TYPE_SCOPE_EXIT, &args,
             funcname, filename, line, col
         );
 
@@ -293,7 +319,7 @@ public:
             Scope_Exit_Event_Args inferred;
             inferred.scope_id = top;
             this->record_event(
-                EVENT_TYPE_SCOPE_EXIT, &inferred,
+                CATS_EVENT_TYPE_SCOPE_EXIT, &inferred,
                 funcname, filename, line, col
             );
 
@@ -310,6 +336,9 @@ public:
 
     void save(const char *filepath) {
         std::lock_guard<std::mutex> guard(this->_mutex);
+
+        std::cout << "Saving trace to " << filepath << std::endl;
+        std::cout.flush();
 
         std::stringstream ss;
         ss << filepath;
@@ -334,7 +363,7 @@ public:
                 ofs << "\"line\": " << event.debug_info.line << ", ";
                 ofs << "\"col\": " << event.debug_info.col;
                 switch (event.event_type) {
-                    case EVENT_TYPE_ALLOCATION: {
+                    case CATS_EVENT_TYPE_ALLOCATION: {
                         Allocation_Event_Args *args =
                             (Allocation_Event_Args *) event.args;
                         ofs << ", \"type\": \"allocation\", ";
@@ -343,7 +372,7 @@ public:
                         ofs << "\"size\": " << args->size;
                         break;
                     }
-                    case EVENT_TYPE_DEALLOCATION: {
+                    case CATS_EVENT_TYPE_DEALLOCATION: {
                         Deallocation_Event_Args *args =
                             (Deallocation_Event_Args *) event.args;
                         ofs << ", \"type\": \"deallocation\", ";
@@ -351,7 +380,7 @@ public:
                         ofs << args->buffer_name << "\"";
                         break;
                     }
-                    case EVENT_TYPE_ACCESS: {
+                    case CATS_EVENT_TYPE_ACCESS: {
                         Access_Event_Args *args =
                             (Access_Event_Args *) event.args;
                         ofs << ", \"type\": \"access\", ";
@@ -361,7 +390,7 @@ public:
                         ofs << args->buffer_name << "\"";
                         break;
                     }
-                    case EVENT_TYPE_SCOPE_ENTRY: {
+                    case CATS_EVENT_TYPE_SCOPE_ENTRY: {
                         Scope_Entry_Event_Args*args =
                             (Scope_Entry_Event_Args *) event.args;
                         ofs << ", \"type\": \"scope_entry\", ";
@@ -369,7 +398,7 @@ public:
                         ofs << "\"id\": " << args->scope_id;
                         break;
                     }
-                    case EVENT_TYPE_SCOPE_EXIT: {
+                    case CATS_EVENT_TYPE_SCOPE_EXIT: {
                         Scope_Exit_Event_Args *args =
                             (Scope_Exit_Event_Args *) event.args;
                         ofs << ", \"type\": \"scope_exit\", ";
@@ -383,6 +412,9 @@ public:
             ofs << std::endl << "  ]" << std::endl;
             ofs << "}" << std::endl;
         }
+
+        std::cout << "Trace saved to " << filepath << std::endl;
+        std::cout.flush();
     }
 
 };
@@ -446,7 +478,7 @@ void cats_trace_instrument_write(
 }
 
 void cats_trace_instrument_scope_entry(
-    uint32_t call_id, uint32_t scope_id, CATS_SCOPE_TYPE scope_type,
+    uint32_t call_id, uint32_t scope_id, uint8_t scope_type,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
     g_cats_trace.instrument_scope_entry(
