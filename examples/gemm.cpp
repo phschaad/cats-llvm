@@ -8,15 +8,17 @@
 void gemm(const float *A, const float *B, float *C, int N) {
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
-            C[i * N + j] = 0.0;
+            float sum = 0.0;
             for (int k = 0; k < N; k++) {
-                C[i * N + j] += A[i * N + k] * B[k * N + j];
+                sum += A[i * N + k] * B[k * N + j];
             }
+            C[i * N + j] = sum;
         }
     }
 }
 
 // Initialize matrix with random values
+__attribute__((annotate("cats_noinstrument")))
 void initializeRandom(float *matrix, int N) {
     std::random_device rd;
     std::mt19937 gen(rd());
@@ -28,6 +30,7 @@ void initializeRandom(float *matrix, int N) {
 }
 
 // Print a small portion of the matrix (for verification)
+__attribute__((annotate("cats_noinstrument")))
 void printMatrixPreview(const float *matrix, int N, const char* name) {
     int preview_size = std::min(5, N);
     std::cout << "Matrix " << name << " preview (" << preview_size << "x" << preview_size << "):" << std::endl;
@@ -71,15 +74,7 @@ int main(int argc, char* argv[]) {
     auto start = std::chrono::high_resolution_clock::now();
     
     // Perform matrix multiplication
-    // gemm(A, B, C, N);
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            C[i * N + j] = 0.0;
-            for (int k = 0; k < N; k++) {
-                C[i * N + j] += A[i * N + k] * B[k * N + j];
-            }
-        }
-    }
+    gemm(A, B, C, N);
     
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
@@ -95,6 +90,10 @@ int main(int argc, char* argv[]) {
         printMatrixPreview(B, N, "B");
         printMatrixPreview(C, N, "C");
     }
+
+    delete[] A;
+    delete[] B;
+    delete[] C;
     
     return 0;
 }

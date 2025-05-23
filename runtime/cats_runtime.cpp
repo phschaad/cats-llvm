@@ -13,7 +13,7 @@
 
 #define CATS_RUNTIME_DEBUG              1
 #define CATS_RUNTIME_PRINT_ALLOCATIONS  1
-#define CATS_RUNTIME_PRINT_ACCESSES     0
+#define CATS_RUNTIME_PRINT_ACCESSES     1
 #define CATS_RUNTIME_PRINT_SCOPES       0
 
 #define CATS_TRACE_FILE_NAME_SIZE       256
@@ -59,7 +59,7 @@ struct Scope_Exit_Event_Args {
 };
 
 struct CATS_Alloc_Info {
-    const char *buffer_name;
+    char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
     size_t size;
 };
 
@@ -178,7 +178,10 @@ public:
         );
 
         CATS_Alloc_Info alloc_info;
-        alloc_info.buffer_name = args.buffer_name;
+        strncpy(
+            alloc_info.buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
+        );
+        alloc_info.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
         alloc_info.size = size;
         this->_allocations[address] = alloc_info;
     }
@@ -236,7 +239,7 @@ public:
             buffer_name = it->second.buffer_name;
         } else if (it != this->_allocations.begin()) {
             --it;
-            if (address < ((char *) it->first) + it->second.size) {
+            if (address <= ((char *) it->first) + it->second.size) {
                 buffer_name = it->second.buffer_name;
             }
         }

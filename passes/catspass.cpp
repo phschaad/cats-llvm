@@ -55,6 +55,37 @@ void insertCatsTraceSave(Module &M) {
   g_cats_save_inserted = true;
 }
 
+bool functionHasAnnotation(Function &F, StringRef Annotation) {
+  // Look for llvm.global.annotations which stores __attribute__((annotate(...)))
+  Module *M = F.getParent();
+  GlobalVariable *Annotations = M->getGlobalVariable("llvm.global.annotations");
+
+  if (!Annotations) return false;
+
+  ConstantArray *CA = dyn_cast<ConstantArray>(Annotations->getInitializer());
+  if (!CA) return false;
+
+  for (unsigned i = 0; i < CA->getNumOperands(); ++i) {
+    ConstantStruct *CS = dyn_cast<ConstantStruct>(CA->getOperand(i));
+    if (!CS) continue;
+
+    // First element should be the function
+    if (CS->getOperand(0)->stripPointerCasts() == &F) {
+      // Second element is the annotation string
+      if (GlobalVariable *AnnotationGV =
+          dyn_cast<GlobalVariable>(CS->getOperand(1)->stripPointerCasts())) {
+        if (ConstantDataArray *CDA =
+            dyn_cast<ConstantDataArray>(AnnotationGV->getInitializer())) {
+          if (CDA->getAsCString() == Annotation) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 namespace {
 class CallTracker : public FunctionPass {
 public:
@@ -62,6 +93,11 @@ public:
   CallTracker() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
+    if (functionHasAnnotation(F, "cats_noinstrument")) {
+      llvm::errs() << "Skipping function " << F.getName() << "\n";
+      return false;
+    }
+
     bool Modified = false;
     Module *M = F.getParent();
 
@@ -269,6 +305,11 @@ public:
   LoadStoreTracker() : FunctionPass(ID) {}
 
   bool runOnFunction(Function &F) override {
+    if (functionHasAnnotation(F, "cats_noinstrument")) {
+      llvm::errs() << "Skipping function " << F.getName() << "\n";
+      return false;
+    }
+
     bool Modified = false;
     Module *M = F.getParent();
 
