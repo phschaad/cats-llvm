@@ -72,7 +72,7 @@ protected:
     std::deque<uint32_t> _scope_stack;
     std::map<const void *, CATS_Alloc_Info> _allocations;
     std::map<uint32_t, std::vector<const char *>> _recorded_calls;
-    std::deque<CATS_Event> _events;
+    std::deque<CATS_Event *> _events;
 
     /*
     std::string get_stack_identifier() {
@@ -111,24 +111,26 @@ protected:
     void record_event(uint8_t event_type, const void *args,
                       const char *funcname, const char *filename,
                       uint32_t line, uint32_t col) {
-        CATS_Event event;
-        event.event_type = event_type;
-        event.args = args;
+        CATS_Event *event = (CATS_Event *) malloc(sizeof(CATS_Event));
+        event->event_type = event_type;
+        event->args = args;
 
         if (!funcname || !*funcname)
             funcname = "$UNKNOWN$";
-        strncpy(event.debug_info.funcname, funcname,
-                CATS_TRACE_FUNC_NAME_SIZE - 1);
-        event.debug_info.funcname[CATS_TRACE_FUNC_NAME_SIZE - 1] = '\0';
+        strncpy(
+            event->debug_info.funcname, funcname, CATS_TRACE_FUNC_NAME_SIZE - 1
+        );
+        event->debug_info.funcname[CATS_TRACE_FUNC_NAME_SIZE - 1] = '\0';
 
         if (!filename || !*filename)
             filename = "$UNKNOWN$";
-        strncpy(event.debug_info.filename, filename,
-                CATS_TRACE_FILE_NAME_SIZE - 1);
-        event.debug_info.filename[CATS_TRACE_FILE_NAME_SIZE - 1] = '\0';
+        strncpy(
+            event->debug_info.filename, filename, CATS_TRACE_FILE_NAME_SIZE - 1
+        );
+        event->debug_info.filename[CATS_TRACE_FILE_NAME_SIZE - 1] = '\0';
 
-        event.debug_info.line = line;
-        event.debug_info.col = col;
+        event->debug_info.line = line;
+        event->debug_info.col = col;
         this->_events.push_back(event);
 
 #if CATS_RUNTIME_DEBUG
@@ -142,8 +144,16 @@ protected:
 public:
     CATS_Trace() {}
 
+    ~CATS_Trace() {
+        this->reset();
+    }
+
     void reset() {
         std::lock_guard<std::mutex> guard(this->_mutex);
+        for (auto &event : this->_events) {
+            free((void *) event->args);
+            free(event);
+        }
         this->_events.clear();
         this->_allocations.clear();
         this->_scope_stack.clear();
@@ -376,22 +386,22 @@ public:
             ofs << "  \"events\": [" << std::endl;
             auto it = this->_events.begin();
             while (it != this->_events.end()) {
-                CATS_Event event = *it;
+                CATS_Event *event = *it;
                 if (it != this->_events.begin()) {
                     ofs << "," << std::endl;
                 }
                 ++it;
                 ofs << "    {";
                 ofs << "\"funcname\": \"";
-                ofs << event.debug_info.funcname << "\", ";
+                ofs << event->debug_info.funcname << "\", ";
                 ofs << "\"filename\": \"";
-                ofs << event.debug_info.filename << "\", ";
-                ofs << "\"line\": " << event.debug_info.line << ", ";
-                ofs << "\"col\": " << event.debug_info.col;
-                switch (event.event_type) {
+                ofs << event->debug_info.filename << "\", ";
+                ofs << "\"line\": " << event->debug_info.line << ", ";
+                ofs << "\"col\": " << event->debug_info.col;
+                switch (event->event_type) {
                     case CATS_EVENT_TYPE_ALLOCATION: {
                         Allocation_Event_Args *args =
-                            (Allocation_Event_Args *) event.args;
+                            (Allocation_Event_Args *) event->args;
                         ofs << ", \"type\": \"allocation\", ";
                         ofs << "\"buffer_name\": \"";
                         ofs << args->buffer_name << "\", ";
@@ -400,7 +410,7 @@ public:
                     }
                     case CATS_EVENT_TYPE_DEALLOCATION: {
                         Deallocation_Event_Args *args =
-                            (Deallocation_Event_Args *) event.args;
+                            (Deallocation_Event_Args *) event->args;
                         ofs << ", \"type\": \"deallocation\", ";
                         ofs << "\"buffer_name\": \"";
                         ofs << args->buffer_name << "\"";
@@ -408,7 +418,7 @@ public:
                     }
                     case CATS_EVENT_TYPE_ACCESS: {
                         Access_Event_Args *args =
-                            (Access_Event_Args *) event.args;
+                            (Access_Event_Args *) event->args;
                         ofs << ", \"type\": \"access\", ";
                         ofs << "\"mode\": ";
                         ofs << (args->is_write ? "\"w\"" : "\"r\"") << ", ";
@@ -418,7 +428,7 @@ public:
                     }
                     case CATS_EVENT_TYPE_SCOPE_ENTRY: {
                         Scope_Entry_Event_Args*args =
-                            (Scope_Entry_Event_Args *) event.args;
+                            (Scope_Entry_Event_Args *) event->args;
                         ofs << ", \"type\": \"scope_entry\", ";
                         ofs << "\"scope_type\": " << args->type << ", ";
                         ofs << "\"id\": " << args->scope_id;
@@ -426,7 +436,7 @@ public:
                     }
                     case CATS_EVENT_TYPE_SCOPE_EXIT: {
                         Scope_Exit_Event_Args *args =
-                            (Scope_Exit_Event_Args *) event.args;
+                            (Scope_Exit_Event_Args *) event->args;
                         ofs << ", \"type\": \"scope_exit\", ";
                         ofs << "\"id\": " << args->scope_id;
                         break;
