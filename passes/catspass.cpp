@@ -8,6 +8,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
+#include "llvm/Transforms/Utils/ModuleUtils.h"
 
 #include <set>
 
@@ -37,6 +38,22 @@ std::set<std::string> names = {
 };
 
 static long g_cats_instrument_call_id = 0;
+static bool g_cats_save_inserted = false;
+
+void insertCatsTraceSave(Module &M) {
+  if (g_cats_save_inserted)
+    return;
+
+  // Insert declaration for cats_trace_save
+  outs() << "Inserting cats_trace_save\n";
+  FunctionCallee SaveFunc = M.getOrInsertFunction(
+      "cats_trace_save",
+      FunctionType::get(Type::getVoidTy(M.getContext()),
+                        {PointerType::getUnqual(M.getContext())}, /*filename*/
+                        false));
+  appendToGlobalDtors(M, cast<Function>(SaveFunc.getCallee()), 0);
+  g_cats_save_inserted = true;
+}
 
 namespace {
 class CallTracker : public FunctionPass {
@@ -217,6 +234,10 @@ public:
       }
     }
 
+    if (Modified && !g_cats_save_inserted) {
+      insertCatsTraceSave(*M);
+    }
+
     return Modified;
   }
 };
@@ -377,6 +398,10 @@ public:
         if (Inst == BB.end())
           break;
       }
+    }
+
+    if (Modified && !g_cats_save_inserted) {
+      insertCatsTraceSave(*M);
     }
 
     return Modified;

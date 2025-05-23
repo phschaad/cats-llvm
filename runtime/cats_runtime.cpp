@@ -337,11 +337,20 @@ public:
     void save(const char *filepath) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        std::cout << "Saving trace to " << filepath << std::endl;
+        /*
+        std::string full_filepath;
+        if (!filepath || !*filepath || filepath[0] == '\0') {
+            full_filepath = "cats_trace.json";
+        } else {
+            full_filepath = filepath;
+        }
+
+        std::cout << "Saving trace to " << full_filepath << std::endl;
         std::cout.flush();
+        */
 
         std::stringstream ss;
-        ss << filepath;
+        ss << "cats_trace.json";
 
         {
             std::ofstream ofs(ss.str(), std::ios::binary);
@@ -412,9 +421,6 @@ public:
             ofs << std::endl << "  ]" << std::endl;
             ofs << "}" << std::endl;
         }
-
-        std::cout << "Trace saved to " << filepath << std::endl;
-        std::cout.flush();
     }
 
 };
