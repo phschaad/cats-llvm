@@ -14,7 +14,7 @@
 #define CATS_RUNTIME_DEBUG              1
 #define CATS_RUNTIME_PRINT_ALLOCATIONS  1
 #define CATS_RUNTIME_PRINT_ACCESSES     1
-#define CATS_RUNTIME_PRINT_SCOPES       0
+#define CATS_RUNTIME_PRINT_SCOPES       1
 
 #define CATS_TRACE_FILE_NAME_SIZE       256
 #define CATS_TRACE_FUNC_NAME_SIZE       64
@@ -157,7 +157,9 @@ public:
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        Allocation_Event_Args args;
+        Allocation_Event_Args *args = (Allocation_Event_Args *) malloc(
+            sizeof(Allocation_Event_Args)
+        );
 
         if (!buffer_name || !*buffer_name)
             buffer_name = "$UNKNOWN$";
@@ -168,12 +170,14 @@ public:
                   << ") bytes" << std::endl;
 #endif
 
-        strncpy(args.buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1);
-        args.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
+        strncpy(
+            args->buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
+        );
+        args->buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
 
-        args.size = size;
+        args->size = size;
         this->record_event(
-            CATS_EVENT_TYPE_ALLOCATION, &args,
+            CATS_EVENT_TYPE_ALLOCATION, args,
             funcname, filename, line, col
         );
 
@@ -200,12 +204,14 @@ public:
 
         auto it = this->_allocations.find(address);
         if (it != this->_allocations.end()) {
-            Deallocation_Event_Args args;
+            Deallocation_Event_Args *args = (Deallocation_Event_Args *) malloc(
+                sizeof(Deallocation_Event_Args)
+            );
             strncpy(
-                args.buffer_name, it->second.buffer_name,
+                args->buffer_name, it->second.buffer_name,
                 CATS_TRACE_BUFFER_NAME_SIZE - 1
             );
-            args.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
+            args->buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
 
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
             std::cout << "Deallocating " << it->second.buffer_name
@@ -213,7 +219,7 @@ public:
 #endif
 
             this->record_event(
-                CATS_EVENT_TYPE_DEALLOCATION, &args,
+                CATS_EVENT_TYPE_DEALLOCATION, args,
                 funcname, filename, line, col
             );
             this->_allocations.erase(it);
@@ -233,7 +239,7 @@ public:
                     << std::endl;
 #endif
 
-        const char *buffer_name = nullptr;
+        char *buffer_name = nullptr;
         auto it = this->_allocations.lower_bound(address);
         if (it != this->_allocations.end() && it->first == address) {
             buffer_name = it->second.buffer_name;
@@ -249,15 +255,17 @@ public:
             std::cout << "Accessing " << buffer_name << std::endl;
 #endif
 
-            Access_Event_Args args;
-            strncpy(
-                args.buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
+            Access_Event_Args *args = (Access_Event_Args *) malloc(
+                sizeof(Access_Event_Args)
             );
-            args.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
-            args.is_write = is_write;
+            strncpy(
+                args->buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
+            );
+            args->buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
+            args->is_write = is_write;
 
             this->record_event(
-                CATS_EVENT_TYPE_ACCESS, &args,
+                CATS_EVENT_TYPE_ACCESS, args,
                 funcname, filename, line, col
             );
         }
@@ -290,11 +298,13 @@ public:
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        Scope_Entry_Event_Args args;
-        args.scope_id = scope_id;
-        args.type = type;
+        Scope_Entry_Event_Args *args = (Scope_Entry_Event_Args *) malloc(
+            sizeof(Scope_Entry_Event_Args)
+        );
+        args->scope_id = scope_id;
+        args->type = type;
         this->record_event(
-            CATS_EVENT_TYPE_SCOPE_ENTRY, &args,
+            CATS_EVENT_TYPE_SCOPE_ENTRY, args,
             funcname, filename, line, col
         );
 
@@ -308,10 +318,12 @@ public:
     ) {
         std::lock_guard<std::mutex> guard(this->_mutex);
 
-        Scope_Exit_Event_Args args;
-        args.scope_id = scope_id;
+        Scope_Exit_Event_Args *args = (Scope_Exit_Event_Args *) malloc(
+            sizeof(Scope_Exit_Event_Args)
+        );
+        args->scope_id = scope_id;
         this->record_event(
-            CATS_EVENT_TYPE_SCOPE_EXIT, &args,
+            CATS_EVENT_TYPE_SCOPE_EXIT, args,
             funcname, filename, line, col
         );
 
@@ -319,10 +331,12 @@ public:
                 this->_scope_stack.back() != scope_id) {
             auto top = this->_scope_stack.back();
 
-            Scope_Exit_Event_Args inferred;
-            inferred.scope_id = top;
+            Scope_Exit_Event_Args *inferred = (Scope_Exit_Event_Args *) malloc(
+                sizeof(Scope_Exit_Event_Args)
+            );
+            inferred->scope_id = top;
             this->record_event(
-                CATS_EVENT_TYPE_SCOPE_EXIT, &inferred,
+                CATS_EVENT_TYPE_SCOPE_EXIT, inferred,
                 funcname, filename, line, col
             );
 
