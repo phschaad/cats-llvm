@@ -40,7 +40,7 @@ foreach(example ${EXAMPLES})
     # Step 2: Run opt with pass plugins
     add_custom_command(
         OUTPUT ${ll_file}
-        COMMAND opt -S -load-pass-plugin=${PASS_PLUGIN_SO} -passes=access-tracker,call-tracker -o ${ll_file} ${bc_file}
+        COMMAND opt -S -load-pass-plugin=${PASS_PLUGIN_SO} -passes=cats-allocation-tracker,cats-load-store-tracker -o ${ll_file} ${bc_file}
         DEPENDS ${bc_file} ${PASS_PLUGIN_SO}
         COMMENT "Running opt passes on ${bc_file}"
     )

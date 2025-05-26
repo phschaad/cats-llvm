@@ -1,5 +1,8 @@
 add_library(CatsPass MODULE
-    catspass.cpp
+    cats_passes.cpp
+    cats_pass_utils.cpp
+    allocation_tracker.cpp
+    load_store_tracker.cpp
 )
 
 option(CATS_PASSES_INSTALL "Install CatsPass library" ON)
