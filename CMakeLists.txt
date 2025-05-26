@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(cats-llvm)
 
+option(BUILD_EXAMPLES "Build examples" ON)
+
 find_package(LLVM REQUIRED CONFIG)
 
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
@@ -16,8 +18,12 @@ elseif (${LLVM_VERSION_MAJOR} VERSION_GREATER_EQUAL 20)
 endif ()
 
 if(NOT LLVM_ENABLE_RTTI)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-rtti")
 endif()
 
 add_subdirectory(passes)
 add_subdirectory(runtime)
+
+if (BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()

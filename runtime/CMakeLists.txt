@@ -4,7 +4,6 @@ add_library(CatsRuntime SHARED
 
 option(CATS_RUNTIME_INSTALL "Install CatsRuntime library" ON)
 
-
 target_include_directories(CatsRuntime PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
