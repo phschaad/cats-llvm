@@ -2,6 +2,9 @@ add_library(CatsRuntime SHARED
     cats_runtime.cpp
 )
 
+option(CATS_RUNTIME_INSTALL "Install CatsRuntime library" ON)
+
+
 target_include_directories(CatsRuntime PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -14,6 +17,18 @@ target_compile_features(CatsRuntime PUBLIC
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(CatsRuntime PRIVATE
         -fvisibility=hidden
+    )
+endif()
+
+if (CATS_RUNTIME_INSTALL)
+    install(TARGETS CatsRuntime
+        EXPORT CatsRuntimeTargets
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+    )
+    install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/cats_runtime.h
+        DESTINATION include
     )
 endif()
 

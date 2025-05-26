@@ -9,6 +9,7 @@ extern "C" {
 #else
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #endif
 
 #if defined(_WIN32)
