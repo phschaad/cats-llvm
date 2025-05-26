@@ -57,23 +57,23 @@ bool AllocationTracker::runOnFunction(Function &F) {
       "cats_trace_instrument_alloc",
       FunctionType::get(Type::getVoidTy(M->getContext()),
                         {Type::getInt64Ty(M->getContext()),       /*call_id*/
-                          PointerType::getUnqual(M->getContext()), /*name*/
-                          PointerType::getUnqual(M->getContext()), /*value*/
-                          Type::getInt64Ty(M->getContext()),       /*size*/
-                          PointerType::getUnqual(M->getContext()), /*funcname*/
-                          PointerType::getUnqual(M->getContext()), /*filename*/
-                          Type::getInt32Ty(M->getContext()),       /*line*/
-                          Type::getInt32Ty(M->getContext())},      /*col*/
+                         PointerType::getUnqual(M->getContext()), /*name*/
+                         PointerType::getUnqual(M->getContext()), /*value*/
+                         Type::getInt64Ty(M->getContext()),       /*size*/
+                         PointerType::getUnqual(M->getContext()), /*funcname*/
+                         PointerType::getUnqual(M->getContext()), /*filename*/
+                         Type::getInt32Ty(M->getContext()),       /*line*/
+                         Type::getInt32Ty(M->getContext())},      /*col*/
                         false));
   FunctionCallee InstrumentDeallocFunc = M->getOrInsertFunction(
       "cats_trace_instrument_dealloc",
       FunctionType::get(Type::getVoidTy(M->getContext()),
                         {Type::getInt64Ty(M->getContext()),       /*call_id*/
-                          PointerType::getUnqual(M->getContext()), /*value*/
-                          PointerType::getUnqual(M->getContext()), /*funcname*/
-                          PointerType::getUnqual(M->getContext()), /*filename*/
-                          Type::getInt32Ty(M->getContext()),       /*line*/
-                          Type::getInt32Ty(M->getContext())},      /*col*/
+                         PointerType::getUnqual(M->getContext()), /*value*/
+                         PointerType::getUnqual(M->getContext()), /*funcname*/
+                         PointerType::getUnqual(M->getContext()), /*filename*/
+                         Type::getInt32Ty(M->getContext()),       /*line*/
+                         Type::getInt32Ty(M->getContext())},      /*col*/
                         false));
 
   // Iterate through all instructions in the function

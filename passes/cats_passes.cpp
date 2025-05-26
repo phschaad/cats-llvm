@@ -24,6 +24,9 @@ PassPluginLibraryInfo getCallTrackerPassPluginInfo() {
           } else if (Name == LOAD_STORE_TRACKER_PASS_NAME) {
             FPM.addPass(LoadStoreTrackerPass());
             return true;
+          } else if (Name == FUNCTION_SCOPE_TRACKER_PASS_NAME) {
+            FPM.addPass(FunctionScopeTrackerPass());
+            return true;
           }
 
           return false;

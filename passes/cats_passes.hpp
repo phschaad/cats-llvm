@@ -11,11 +11,13 @@
 
 #define CATS_PASSES_VERSION "0.1.0"
 
-#define ALLOCATION_TRACKER_PASS_NAME "cats-allocation-tracker"
-#define LOAD_STORE_TRACKER_PASS_NAME "cats-load-store-tracker"
+#define ALLOCATION_TRACKER_PASS_NAME      "cats-allocation-tracker"
+#define LOAD_STORE_TRACKER_PASS_NAME      "cats-load-store-tracker"
+#define FUNCTION_SCOPE_TRACKER_PASS_NAME  "cats-function-scope-tracker"
 
 
 static uint64_t g_cats_instrument_call_id = 0;
+static uint32_t g_cats_instrument_scope_id = 0;
 static bool g_cats_save_inserted = false;
 
 
@@ -88,6 +90,35 @@ struct LoadStoreTrackerPass : llvm::PassInfoMixin<LoadStoreTrackerPass> {
     LoadStoreTracker LSTP;
 
     bool Changed = LSTP.runOnFunction(M);
+    if (Changed)
+      // Assuming conservatively that nothing is preserved
+      return llvm::PreservedAnalyses::none();
+
+    return llvm::PreservedAnalyses::all();
+  }
+
+  // for optnone
+  static bool isRequired() { return true; }
+};
+
+class FunctionScopeTracker : public llvm::FunctionPass {
+public:
+  static char ID;
+  FunctionScopeTracker() : llvm::FunctionPass(ID) {}
+
+  bool runOnFunction(llvm::Function &F);
+};
+
+struct FunctionScopeTrackerPass : llvm::PassInfoMixin<FunctionScopeTrackerPass> {
+  FunctionScopeTrackerPass() {}
+
+  llvm::PreservedAnalyses run(
+    llvm::Function &M,
+    [[maybe_unused]] llvm::FunctionAnalysisManager &AM
+  ) {
+    FunctionScopeTracker FSTP;
+
+    bool Changed = FSTP.runOnFunction(M);
     if (Changed)
       // Assuming conservatively that nothing is preserved
       return llvm::PreservedAnalyses::none();
