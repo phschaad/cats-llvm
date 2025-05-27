@@ -1,6 +1,8 @@
 #ifndef __CATS_PASSES_HPP__
 #define __CATS_PASSES_HPP__
 
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
@@ -14,6 +16,7 @@
 #define ALLOCATION_TRACKER_PASS_NAME      "cats-allocation-tracker"
 #define LOAD_STORE_TRACKER_PASS_NAME      "cats-load-store-tracker"
 #define FUNCTION_SCOPE_TRACKER_PASS_NAME  "cats-function-scope-tracker"
+#define LOOP_SCOPE_TRACKER_PASS_NAME      "cats-loop-scope-tracker"
 
 
 static uint64_t g_cats_instrument_call_id = 0;
@@ -101,33 +104,36 @@ struct LoadStoreTrackerPass : llvm::PassInfoMixin<LoadStoreTrackerPass> {
   static bool isRequired() { return true; }
 };
 
-class FunctionScopeTracker : public llvm::FunctionPass {
+class FunctionScopeTrackerPass : public llvm::PassInfoMixin<FunctionScopeTrackerPass> {
 public:
-  static char ID;
-  FunctionScopeTracker() : llvm::FunctionPass(ID) {}
-
-  bool runOnFunction(llvm::Function &F);
-};
-
-struct FunctionScopeTrackerPass : llvm::PassInfoMixin<FunctionScopeTrackerPass> {
   FunctionScopeTrackerPass() {}
 
   llvm::PreservedAnalyses run(
-    llvm::Function &M,
+    llvm::Function &F,
     [[maybe_unused]] llvm::FunctionAnalysisManager &AM
-  ) {
-    FunctionScopeTracker FSTP;
-
-    bool Changed = FSTP.runOnFunction(M);
-    if (Changed)
-      // Assuming conservatively that nothing is preserved
-      return llvm::PreservedAnalyses::none();
-
-    return llvm::PreservedAnalyses::all();
-  }
+  );
 
   // for optnone
   static bool isRequired() { return true; }
+};
+
+class LoopScopeTrackerPass : public llvm::PassInfoMixin<LoopScopeTrackerPass> {
+public:
+  LoopScopeTrackerPass() {}
+
+  llvm::PreservedAnalyses run(
+    llvm::Function &F,
+    [[maybe_unused]] llvm::FunctionAnalysisManager &AM
+  );
+
+  // for optnone
+  static bool isRequired() { return true; }
+
+private:
+  void processLoop(
+    llvm::Loop *L, llvm::FunctionCallee EntryFunc,
+    llvm::FunctionCallee ExitFunc
+  );
 };
 
 #endif // __CATS_PASSES_HPP__

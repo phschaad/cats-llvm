@@ -37,13 +37,15 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
   Builder.CreateCall(ExitFunc, ExitArgs);
 }
 
-bool FunctionScopeTracker::runOnFunction(Function &F) {
+PreservedAnalyses FunctionScopeTrackerPass::run(
+  Function &F, FunctionAnalysisManager &AM
+) {
   if (F.isDeclaration())
-    return false;
+    return PreservedAnalyses::all();
 
   if (functionHasAnnotation(F, "cats_noinstrument")) {
     errs() << "Skipping function " << F.getName() << "\n";
-    return false;
+    return PreservedAnalyses::all();
   }
 
   bool Modified = false;
@@ -75,9 +77,6 @@ bool FunctionScopeTracker::runOnFunction(Function &F) {
                        Type::getInt32Ty(Context)},      /*col*/
                        false)
   );
-
-  // Insert function entry instrumentation at the beginning of the function
-  IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
 
   // Get debug location information
   const DebugLoc &DL = F.getEntryBlock().begin()->getDebugLoc();
@@ -128,6 +127,8 @@ bool FunctionScopeTracker::runOnFunction(Function &F) {
       ConstantInt::get(Type::getInt32Ty(M->getContext()), Line),
       ConstantInt::get(Type::getInt32Ty(M->getContext()), Col)};
 
+  // Insert function entry instrumentation at the beginning of the function
+  IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
   Builder.CreateCall(EnterFunc, Args);
 
   // Insert instrumentation before each return instruction
@@ -167,21 +168,31 @@ bool FunctionScopeTracker::runOnFunction(Function &F) {
     }
   }
 
+  // TODO: This is most likely not correct at the moment. The instrumentation
+  // call is added right before the unreachable instruction, but probably
+  // should be added before the proceeding instruction.
+
   // Add instrumentation to any other exit point (like unreachable)
   for (BasicBlock &BB : F) {
     Instruction *Terminator = BB.getTerminator();
+    if (isa<UnreachableInst>(Terminator)) {
+      outs() << "Terminator: " << *Terminator << "\n";
+      Builder.SetInsertPoint(Terminator);
+      instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
+                     FilenamePtr, Terminator);
+    }/* else
     if (!isa<ReturnInst>(Terminator) && !isa<InvokeInst>(Terminator)) {
       Builder.SetInsertPoint(Terminator);
       instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
                      FilenamePtr, Terminator);
-    }
+    }*/
   }
 
   if (Modified && !g_cats_save_inserted) {
     insertCatsTraceSave(*M);
   }
 
-  return Modified;
+  if (Modified)
+    return PreservedAnalyses::none();
+  return PreservedAnalyses::all();
 }
-
-char FunctionScopeTracker::ID = 3;

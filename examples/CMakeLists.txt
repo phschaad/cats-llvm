@@ -23,6 +23,8 @@ endif()
 # List of example targets
 set(EXAMPLES gemm)
 
+set(PASSES cats-allocation-tracker,cats-load-store-tracker,cats-function-scope-tracker,cats-loop-scope-tracker)
+
 foreach(example ${EXAMPLES})
     set(src_file "${CMAKE_CURRENT_SOURCE_DIR}/${example}.cpp")
     set(bc_file "${CMAKE_CURRENT_BINARY_DIR}/${example}.bc")
@@ -32,7 +34,7 @@ foreach(example ${EXAMPLES})
     # Step 1: Compile to LLVM bitcode
     add_custom_command(
         OUTPUT ${bc_file}
-        COMMAND clang++ -Wall -Wextra -O3 -g -c -emit-llvm -o ${bc_file} ${src_file}
+        COMMAND clang++ -Wall -Wextra -O3 -g -c -emit-llvm -fopenmp=libomp -o ${bc_file} ${src_file}
         DEPENDS ${src_file}
         COMMENT "Compiling ${src_file} to LLVM bitcode"
     )
@@ -40,7 +42,7 @@ foreach(example ${EXAMPLES})
     # Step 2: Run opt with pass plugins
     add_custom_command(
         OUTPUT ${ll_file}
-        COMMAND opt -S -load-pass-plugin=${PASS_PLUGIN_SO} -passes=cats-allocation-tracker,cats-load-store-tracker,cats-function-scope-tracker -o ${ll_file} ${bc_file}
+        COMMAND opt -S -load-pass-plugin=${PASS_PLUGIN_SO} -passes=${PASSES} -o ${ll_file} ${bc_file}
         DEPENDS ${bc_file} ${PASS_PLUGIN_SO}
         COMMENT "Running opt passes on ${bc_file}"
     )
@@ -48,7 +50,7 @@ foreach(example ${EXAMPLES})
     # Step 3: Link final executable
     add_custom_command(
         OUTPUT ${bin_file}
-        COMMAND clang++ -g -o ${bin_file} ${ll_file} -L${CATS_RUNTIME_DIR} -lCatsRuntime -lpthread -ldl
+        COMMAND clang++ -g -o ${bin_file} ${ll_file} -L${CATS_RUNTIME_DIR} -lCatsRuntime -lpthread -ldl -fopenmp=libomp
         DEPENDS ${ll_file} ${CATS_RUNTIME_LIB}
         COMMENT "Linking ${bin_file}"
     )

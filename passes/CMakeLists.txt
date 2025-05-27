@@ -1,10 +1,5 @@
-add_library(CatsPass MODULE
-    cats_pass_utils.cpp
-    allocation_tracker.cpp
-    load_store_tracker.cpp
-    function_scope_tracker.cpp
-    cats_passes.cpp
-)
+file(GLOB_RECURSE CATS_PASS_SOURCES "*.cpp")
+add_library(CatsPass MODULE ${CATS_PASS_SOURCES})
 
 option(CATS_PASSES_INSTALL "Install CatsPass library" ON)
 
