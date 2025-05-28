@@ -14,6 +14,11 @@ PassPluginLibraryInfo getCallTrackerPassPluginInfo() {
       return true;
     });
 
+    PB.registerAnalysisRegistrationCallback(
+        [](ModuleAnalysisManager &MAM) {
+          MAM.registerPass([]() { return OMPScopeFinder(); });
+        });
+
     // Only runs with the corresponding `opt -passes` arguments
     PB.registerPipelineParsingCallback(
         [](StringRef Name, FunctionPassManager &FPM,
@@ -24,15 +29,19 @@ PassPluginLibraryInfo getCallTrackerPassPluginInfo() {
           } else if (Name == LOAD_STORE_TRACKER_PASS_NAME) {
             FPM.addPass(LoadStoreTrackerPass());
             return true;
-          } else if (Name == FUNCTION_SCOPE_TRACKER_PASS_NAME) {
-            FPM.addPass(FunctionScopeTrackerPass());
-            return true;
           } else if (Name == LOOP_SCOPE_TRACKER_PASS_NAME) {
             FPM.addPass(LoopScopeTrackerPass());
             return true;
           }
 
           return false;
+        });
+
+    PB.registerPipelineParsingCallback(
+        [](StringRef Name, ModulePassManager &MPM,
+           ArrayRef<PassBuilder::PipelineElement>) {
+          MPM.addPass(FunctionScopeTrackerPass());
+          return true;
         });
   };
 

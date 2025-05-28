@@ -109,8 +109,8 @@ public:
   FunctionScopeTrackerPass() {}
 
   llvm::PreservedAnalyses run(
-    llvm::Function &F,
-    [[maybe_unused]] llvm::FunctionAnalysisManager &AM
+    llvm::Module &M,
+    [[maybe_unused]] llvm::ModuleAnalysisManager &AM
   );
 
   // for optnone
@@ -134,6 +134,25 @@ private:
     llvm::Loop *L, llvm::FunctionCallee EntryFunc,
     llvm::FunctionCallee ExitFunc
   );
+};
+
+struct OMPScopeFinder : llvm::AnalysisInfoMixin<OMPScopeFinder> {
+  OMPScopeFinder() {}
+
+  static llvm::AnalysisKey Key;
+
+  struct Result {
+    std::set<llvm::CallInst *> OmpForkCalls;
+    std::set<std::string> OutlinedFunctions;
+  };
+
+  Result run(
+    llvm::Module &M,
+    [[maybe_unused]] llvm::ModuleAnalysisManager &AM
+  );
+
+  // for optnone
+  static bool isRequired() { return true; }
 };
 
 #endif // __CATS_PASSES_HPP__

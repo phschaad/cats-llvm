@@ -6,12 +6,65 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/PassManager.h"
 #include "llvm/Pass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include "../runtime/cats_runtime.h"
 
 using namespace llvm;
+
+llvm::AnalysisKey OMPScopeFinder::Key;
+
+OMPScopeFinder::Result OMPScopeFinder::run(
+  Module &M, ModuleAnalysisManager &AM
+) {
+  Result Res;
+
+  // Instrument OpenMP fork calls
+  static const std::set<std::string> gomp_fork_names = {
+    "GOMP_parallel_start",
+    "GOMP_parallel",
+  };
+  static const std::set<std::string> kmpc_fork_names = {
+    "__kmpc_fork_call",
+    "__kmpc_fork_teams"
+  };
+
+  for (Function &F : M) {
+    for (BasicBlock &BB : F) {
+      for (auto Inst = BB.begin(); Inst != BB.end(); ++Inst) {
+        if (CallInst *CI = dyn_cast<CallInst>(&*Inst)) {
+          Function *Callee = CI->getCalledFunction();
+          const std::string Name = Callee ? Callee->getName().str() : "";
+          Value *TargetFunction = nullptr;
+          if (gomp_fork_names.count(Name)) {
+            if (CI->arg_size() >= 1) {
+              TargetFunction = CI->getArgOperand(0);
+            }
+            Res.OmpForkCalls.insert(CI);
+          } else if (kmpc_fork_names.count(Name)) {
+            if (CI->arg_size() >= 3) {
+              TargetFunction = CI->getArgOperand(2);
+            }
+            Res.OmpForkCalls.insert(CI);
+          }
+          if (TargetFunction != nullptr) {
+            // Strip away any bitcasts to get the actual function
+            while (BitCastInst *BCI = dyn_cast<BitCastInst>(TargetFunction)) {
+              TargetFunction = BCI->getOperand(0);
+            }
+            if (Function *TargetFunc = dyn_cast<Function>(TargetFunction)) {
+              Res.OutlinedFunctions.insert(TargetFunc->getName().str());
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return Res;
+}
 
 void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
                     Constant *ScopeID, Constant *FuncNamePtr,
@@ -37,24 +90,13 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
   Builder.CreateCall(ExitFunc, ExitArgs);
 }
 
-PreservedAnalyses FunctionScopeTrackerPass::run(
-  Function &F, FunctionAnalysisManager &AM
-) {
-  if (F.isDeclaration())
-    return PreservedAnalyses::all();
-
-  if (functionHasAnnotation(F, "cats_noinstrument")) {
-    errs() << "Skipping function " << F.getName() << "\n";
-    return PreservedAnalyses::all();
-  }
-
+bool processFunction(Module &M, Function &F) {
   bool Modified = false;
 
-  Module *M = F.getParent();
-  LLVMContext &Context = M->getContext();
+  LLVMContext &Context = M.getContext();
 
   // Get or create the instrument functions
-  FunctionCallee EnterFunc = M->getOrInsertFunction(
+  FunctionCallee EnterFunc = M.getOrInsertFunction(
     "cats_trace_instrument_scope_entry",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
@@ -66,7 +108,7 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
                        Type::getInt32Ty(Context)},      /*col*/
                        false)
   );
-  FunctionCallee ExitFunc = M->getOrInsertFunction(
+  FunctionCallee ExitFunc = M.getOrInsertFunction(
     "cats_trace_instrument_scope_exit",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
@@ -95,23 +137,20 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
   }
 
   Constant *ScopeID = ConstantInt::get(
-    Type::getInt32Ty(M->getContext()), g_cats_instrument_scope_id++);
+    Type::getInt32Ty(M.getContext()), g_cats_instrument_scope_id++);
 
   // Create a global string constant for the filename
-  Constant *FilenameStr =
-      ConstantDataArray::getString(M->getContext(), Filename);
-  Constant *FuncnameStr =
-      ConstantDataArray::getString(M->getContext(), F.getName());
+  Constant *FilenameStr = ConstantDataArray::getString(Context, Filename);
+  Constant *FuncnameStr = ConstantDataArray::getString(Context, F.getName());
   GlobalVariable *FilenameGV = new GlobalVariable(
-      *M, FilenameStr->getType(), true, GlobalValue::PrivateLinkage,
+      M, FilenameStr->getType(), true, GlobalValue::PrivateLinkage,
       FilenameStr, "filename");
   GlobalVariable *FuncnameGV = new GlobalVariable(
-      *M, FuncnameStr->getType(), true, GlobalValue::PrivateLinkage,
+      M, FuncnameStr->getType(), true, GlobalValue::PrivateLinkage,
       FuncnameStr, "funcname");
 
   // Create a pointer to the first character of the string
-  Constant *Zero =
-      ConstantInt::get(Type::getInt32Ty(M->getContext()), 0);
+  Constant *Zero = ConstantInt::get(Type::getInt32Ty(Context), 0);
   Constant *Indices[] = {Zero, Zero};
   Constant *FilenamePtr = ConstantExpr::getGetElementPtr(
       FilenameStr->getType(), FilenameGV, Indices, true);
@@ -124,8 +163,8 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
       ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION),
       FuncnamePtr,
       FilenamePtr,
-      ConstantInt::get(Type::getInt32Ty(M->getContext()), Line),
-      ConstantInt::get(Type::getInt32Ty(M->getContext()), Col)};
+      ConstantInt::get(Type::getInt32Ty(Context), Line),
+      ConstantInt::get(Type::getInt32Ty(Context), Col)};
 
   // Insert function entry instrumentation at the beginning of the function
   IRBuilder<> Builder(&*F.getEntryBlock().getFirstInsertionPt());
@@ -188,11 +227,42 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
     }*/
   }
 
-  if (Modified && !g_cats_save_inserted) {
-    insertCatsTraceSave(*M);
+  return Modified;
+}
+
+PreservedAnalyses FunctionScopeTrackerPass::run(
+  Module &M, ModuleAnalysisManager &MAM
+) {
+  bool Modified = false;
+  for (Function &F : M) {
+    if (F.isDeclaration()) continue;
+
+    // Skip functions with the "cats_noinstrument" annotation
+    if (functionHasAnnotation(F, "cats_noinstrument")) {
+      outs() << "Skipping function " << F.getName() << "\n";
+      continue;
+    }
+
+    auto &ModuleOMPRes = MAM.getResult<OMPScopeFinder>(M);
+    // Now use the module-level analysis results
+    if (ModuleOMPRes.OutlinedFunctions.count(F.getName().str())) {
+      errs() << "Skipping outlined function " << F.getName() << "\n";
+      continue;
+    }
+
+    if (processFunction(M, F)) {
+      // If we modified the function, we assume that nothing is preserved
+      Modified = true;
+    }
   }
 
-  if (Modified)
+  if (Modified && !g_cats_save_inserted) {
+    insertCatsTraceSave(M);
+  }
+
+  if (Modified) {
+    // Assuming conservatively that nothing is preserved
     return PreservedAnalyses::none();
+  }
   return PreservedAnalyses::all();
 }
