@@ -17,6 +17,7 @@
 #define LOAD_STORE_TRACKER_PASS_NAME      "cats-load-store-tracker"
 #define FUNCTION_SCOPE_TRACKER_PASS_NAME  "cats-function-scope-tracker"
 #define LOOP_SCOPE_TRACKER_PASS_NAME      "cats-loop-scope-tracker"
+#define PARALLEL_SCOPE_TRACKER_PASS_NAME  "cats-parallel-scope-tracker"
 
 
 void insertCatsTraceSave(llvm::Module &M);
@@ -144,6 +145,20 @@ struct OMPScopeFinder : llvm::AnalysisInfoMixin<OMPScopeFinder> {
   };
 
   Result run(
+    llvm::Module &M,
+    [[maybe_unused]] llvm::ModuleAnalysisManager &AM
+  );
+
+  // for optnone
+  static bool isRequired() { return true; }
+};
+
+class ParallelScopeTrackerPass :
+public llvm::PassInfoMixin<ParallelScopeTrackerPass> {
+public:
+  ParallelScopeTrackerPass() {}
+
+  llvm::PreservedAnalyses run(
     llvm::Module &M,
     [[maybe_unused]] llvm::ModuleAnalysisManager &AM
   );

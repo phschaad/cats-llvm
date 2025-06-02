@@ -23,7 +23,7 @@ endif()
 # List of example targets
 set(EXAMPLES gemm)
 
-set(PASSES "cats-function-scope-tracker,function(cats-allocation-tracker),function(cats-load-store-tracker),function(cats-loop-scope-tracker)")
+set(PASSES "cats-function-scope-tracker,cats-parallel-scope-tracker,function(cats-allocation-tracker),function(cats-load-store-tracker),function(cats-loop-scope-tracker)")
 
 foreach(example ${EXAMPLES})
     set(src_file "${CMAKE_CURRENT_SOURCE_DIR}/${example}.cpp")

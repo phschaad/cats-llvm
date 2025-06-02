@@ -14,57 +14,6 @@
 
 using namespace llvm;
 
-llvm::AnalysisKey OMPScopeFinder::Key;
-
-OMPScopeFinder::Result OMPScopeFinder::run(
-  Module &M, ModuleAnalysisManager &AM
-) {
-  Result Res;
-
-  // Instrument OpenMP fork calls
-  static const std::set<std::string> gomp_fork_names = {
-    "GOMP_parallel_start",
-    "GOMP_parallel",
-  };
-  static const std::set<std::string> kmpc_fork_names = {
-    "__kmpc_fork_call",
-    "__kmpc_fork_teams"
-  };
-
-  for (Function &F : M) {
-    for (BasicBlock &BB : F) {
-      for (auto Inst = BB.begin(); Inst != BB.end(); ++Inst) {
-        if (CallInst *CI = dyn_cast<CallInst>(&*Inst)) {
-          Function *Callee = CI->getCalledFunction();
-          const std::string Name = Callee ? Callee->getName().str() : "";
-          Value *TargetFunction = nullptr;
-          if (gomp_fork_names.count(Name)) {
-            if (CI->arg_size() >= 1) {
-              TargetFunction = CI->getArgOperand(0);
-            }
-            Res.OmpForkCalls.insert(CI);
-          } else if (kmpc_fork_names.count(Name)) {
-            if (CI->arg_size() >= 3) {
-              TargetFunction = CI->getArgOperand(2);
-            }
-            Res.OmpForkCalls.insert(CI);
-          }
-          if (TargetFunction != nullptr) {
-            // Strip away any bitcasts to get the actual function
-            while (BitCastInst *BCI = dyn_cast<BitCastInst>(TargetFunction)) {
-              TargetFunction = BCI->getOperand(0);
-            }
-            if (Function *TargetFunc = dyn_cast<Function>(TargetFunction)) {
-              Res.OutlinedFunctions.insert(TargetFunc->getName().str());
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return Res;
-}
 
 void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
                     Constant *ScopeID, Constant *FuncNamePtr,
@@ -91,7 +40,7 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
   Builder.CreateCall(ExitFunc, ExitArgs);
 }
 
-bool processFunction(Module &M, Function &F, bool parallel) {
+bool processFunction(Module &M, Function &F) {
   if (F.hasFnAttribute("cats_function_instrumented")) {
     errs() << "Function " << F.getName()
            << " is already instrumented, skipping.\n";
@@ -163,15 +112,10 @@ bool processFunction(Module &M, Function &F, bool parallel) {
   Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
       FilenameStr->getType(), FuncnameGV, Indices, true);
 
-  auto *ScopeType = parallel ? ConstantInt::get(
-    Type::getInt8Ty(Context), CATS_SCOPE_TYPE_PARALLEL
-  ) : ConstantInt::get(
-    Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION
-  );
   Value *Args[] = {
       ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(M, true)),
       ScopeID,
-      ScopeType,
+      ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION),
       FuncnamePtr,
       FilenamePtr,
       ConstantInt::get(Type::getInt32Ty(Context), Line),
@@ -247,6 +191,7 @@ bool processFunction(Module &M, Function &F, bool parallel) {
 PreservedAnalyses FunctionScopeTrackerPass::run(
   Module &M, ModuleAnalysisManager &MAM
 ) {
+  auto &ModuleOMPRes = MAM.getResult<OMPScopeFinder>(M);
   bool Modified = false;
   for (Function &F : M) {
     if (F.isDeclaration()) continue;
@@ -257,14 +202,13 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
       continue;
     }
 
-    auto &ModuleOMPRes = MAM.getResult<OMPScopeFinder>(M);
-    bool isParallel = false;
     if (ModuleOMPRes.OutlinedFunctions.count(F.getName().str())) {
-      isParallel = true;
+      outs() << "Skipping OpenMP outlined function " << F.getName() << "\n";
+      continue;
     }
 
     // Process function scopes
-    if (processFunction(M, F, isParallel)) {
+    if (processFunction(M, F)) {
       // If we modified the function, we assume that nothing is preserved
       Modified = true;
     }

@@ -11,14 +11,30 @@
 #include <sstream>
 #include <vector>
 
-#define CATS_RUNTIME_DEBUG              0
-#define CATS_RUNTIME_PRINT_ALLOCATIONS  0
-#define CATS_RUNTIME_PRINT_ACCESSES     0
-#define CATS_RUNTIME_PRINT_SCOPES       0
+#include <omp.h>
 
+#ifndef CATS_RUNTIME_DEBUG
+#define CATS_RUNTIME_DEBUG              0
+#endif
+#ifndef CATS_RUNTIME_PRINT_ALLOCATIONS
+#define CATS_RUNTIME_PRINT_ALLOCATIONS  0
+#endif
+#ifndef CATS_RUNTIME_PRINT_ACCESSES
+#define CATS_RUNTIME_PRINT_ACCESSES     0
+#endif
+#ifndef CATS_RUNTIME_PRINT_SCOPES
+#define CATS_RUNTIME_PRINT_SCOPES       0
+#endif
+
+#ifndef CATS_TRACE_FILE_NAME_SIZE
 #define CATS_TRACE_FILE_NAME_SIZE       256
+#endif
+#ifndef CATS_TRACE_FUNC_NAME_SIZE
 #define CATS_TRACE_FUNC_NAME_SIZE       64
+#endif
+#ifndef CATS_TRACE_BUFFER_NAME_SIZE
 #define CATS_TRACE_BUFFER_NAME_SIZE     64
+#endif
 
 namespace cats {
 
@@ -254,6 +270,12 @@ public:
     void *address, bool is_write, const char *funcname,
     const char *filename, uint32_t line, uint32_t col
   ) {
+    if (omp_in_parallel() && omp_get_thread_num() != 0) {
+      // If we are in a parallel region, only the master thread should exit
+      // the scope, so we skip this call.
+      return;
+    }
+
     std::lock_guard<std::mutex> guard(this->_mutex);
 
     if (this->already_recorded(call_id)) {
@@ -321,6 +343,12 @@ public:
     uint32_t scope_id, uint8_t type, const char *funcname,
     const char *filename, uint32_t line, uint32_t col
   ) {
+    if (omp_in_parallel() && omp_get_thread_num() != 0) {
+      // If we are in a parallel region, only the master thread should exit
+      // the scope, so we skip this call.
+      return;
+    }
+
     std::lock_guard<std::mutex> guard(this->_mutex);
 
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
@@ -346,12 +374,6 @@ public:
     this->record_event(
       call_id, CATS_EVENT_TYPE_SCOPE_ENTRY, args, funcname, filename, line, col
     );
-
-#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
-    std::cout << "Entering scope " << scope_id
-              << " of type " << (int) type
-              << " in " << funcname << std::endl;
-#endif
   }
 
   void instrument_scope_exit(
@@ -359,7 +381,18 @@ public:
     uint32_t scope_id, const char *funcname, const char *filename,
     uint32_t line, uint32_t col
   ) {
+    if (omp_in_parallel() && omp_get_thread_num() != 0) {
+      // If we are in a parallel region, only the master thread should exit
+      // the scope, so we skip this call.
+      return;
+    }
+
     std::lock_guard<std::mutex> guard(this->_mutex);
+
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
+    std::cout << "Exiting scope " << scope_id
+              << " in " << funcname << std::endl;
+#endif
 
     bool recorded = false;
     if (this->already_recorded(call_id)) {
@@ -391,6 +424,11 @@ public:
           line, col
         );
       }
+
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
+    std::cout << " -> Exiting scope " << top
+              << " as a consequence" << std::endl;
+#endif
 
       this->_scope_stack.pop_back();
     }
