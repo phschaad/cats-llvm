@@ -11,7 +11,7 @@
 #include <sstream>
 #include <vector>
 
-#define CATS_RUNTIME_DEBUG              1
+#define CATS_RUNTIME_DEBUG              0
 #define CATS_RUNTIME_PRINT_ALLOCATIONS  0
 #define CATS_RUNTIME_PRINT_ACCESSES     0
 #define CATS_RUNTIME_PRINT_SCOPES       0
@@ -78,70 +78,70 @@ protected:
     std::deque<CATS_Event *> _events;
 
     std::string get_stack_identifier() {
-        std::stringstream ss;
-        auto it = this->_scope_stack.begin();
-        while (it != this->_scope_stack.end()) {
-            ss << *it;
-            ++it;
-            if (it != this->_scope_stack.end()) {
-                ss << ",";
-            }
+      std::stringstream ss;
+      auto it = this->_scope_stack.begin();
+      while (it != this->_scope_stack.end()) {
+        ss << *it;
+        ++it;
+        if (it != this->_scope_stack.end()) {
+          ss << ",";
         }
-        return ss.str();
+      }
+      return ss.str();
     }
 
     bool already_recorded(uint32_t call_id) {
-        auto it = this->_recorded_calls.find(call_id);
-        auto stack_id = this->get_stack_identifier();
-        if (it == this->_recorded_calls.end()) {
-            this->_recorded_calls[call_id] = std::vector<std::string>();
-            this->_recorded_calls[call_id].push_back(stack_id);
-            return false;
-        } else {
-            auto val = it->second;
-            for (auto &v : val) {
-                if (v == stack_id) {
-                    return true;
-                }
-            }
-            it->second.push_back(stack_id);
-        }
+      auto it = this->_recorded_calls.find(call_id);
+      auto stack_id = this->get_stack_identifier();
+      if (it == this->_recorded_calls.end()) {
+        this->_recorded_calls[call_id] = std::vector<std::string>();
+        this->_recorded_calls[call_id].push_back(stack_id);
         return false;
+      } else {
+        auto val = it->second;
+        for (auto &v : val) {
+          if (v == stack_id) {
+            return true;
+          }
+        }
+        it->second.push_back(stack_id);
+      }
+      return false;
     }
 
     void record_event(uint32_t call_id, uint32_t event_type, const void *args,
                       const char *funcname, const char *filename,
                       uint32_t line, uint32_t col) {
-        CATS_Event *event = (CATS_Event *) malloc(sizeof(CATS_Event));
+      CATS_Event *event = (CATS_Event *) malloc(sizeof(CATS_Event));
 #if CATS_RUNTIME_DEBUG
-        event->call_id = call_id;
+      event->call_id = call_id;
 #endif
-        event->event_type = event_type;
-        event->args = args;
+      event->event_type = event_type;
+      event->args = args;
 
-        if (!funcname || !*funcname)
-            funcname = "$UNKNOWN$";
-        strncpy(
-            event->debug_info.funcname, funcname, CATS_TRACE_FUNC_NAME_SIZE - 1
-        );
-        event->debug_info.funcname[CATS_TRACE_FUNC_NAME_SIZE - 1] = '\0';
+      if (!funcname || !*funcname)
+        funcname = "$UNKNOWN$";
+      strncpy(
+        event->debug_info.funcname, funcname, CATS_TRACE_FUNC_NAME_SIZE - 1
+      );
+      event->debug_info.funcname[CATS_TRACE_FUNC_NAME_SIZE - 1] = '\0';
 
-        if (!filename || !*filename)
-            filename = "$UNKNOWN$";
-        strncpy(
-            event->debug_info.filename, filename, CATS_TRACE_FILE_NAME_SIZE - 1
-        );
-        event->debug_info.filename[CATS_TRACE_FILE_NAME_SIZE - 1] = '\0';
+      if (!filename || !*filename)
+        filename = "$UNKNOWN$";
+      strncpy(
+        event->debug_info.filename, filename, CATS_TRACE_FILE_NAME_SIZE - 1
+      );
+      event->debug_info.filename[CATS_TRACE_FILE_NAME_SIZE - 1] = '\0';
 
-        event->debug_info.line = line;
-        event->debug_info.col = col;
-        this->_events.push_back(event);
+      event->debug_info.line = line;
+      event->debug_info.col = col;
+      this->_events.push_back(event);
 
 #if CATS_RUNTIME_DEBUG
-        if (this->_events.size() % 1'000'000 == 0) {
-            std::cout << "Recorded " << this->_events.size() << " events"
-                      << std::endl;
-        }
+      if (this->_events.size() % 1'000'000 == 0) {
+        std::cout << "Recorded " << this->_events.size() << " events"
+                  << std::endl;
+      }
 #endif
     }
 
@@ -323,12 +323,17 @@ public:
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
 
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
     std::cout << "Entering scope " << scope_id
               << " of type " << (int) type
               << " in " << funcname << std::endl;
+#endif
+
+    // The scope must be entered regardless of whether it has been
+    // recorded before, so we push it onto the stack
+    this->_scope_stack.push_back(scope_id);
+
     if (this->already_recorded(call_id)) {
-      std::cout << "Scope entry already recorded for call_id "
-                << call_id << std::endl;
       // If this call has already been recorded, skip the allocation
       return;
     }
@@ -347,8 +352,6 @@ public:
               << " of type " << (int) type
               << " in " << funcname << std::endl;
 #endif
-
-    this->_scope_stack.push_back(scope_id);
   }
 
   void instrument_scope_exit(
@@ -358,31 +361,36 @@ public:
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
 
+    bool recorded = false;
     if (this->already_recorded(call_id)) {
       // If this call has already been recorded, skip the allocation
-      return;
+      recorded = true;
     }
 
-    Scope_Exit_Event_Args *args = (Scope_Exit_Event_Args *) malloc(
-      sizeof(Scope_Exit_Event_Args)
-    );
-    args->scope_id = scope_id;
-    this->record_event(
-      call_id, CATS_EVENT_TYPE_SCOPE_EXIT, args, funcname, filename, line, col
-    );
+    if (!recorded) {
+      Scope_Exit_Event_Args *args = (Scope_Exit_Event_Args *) malloc(
+        sizeof(Scope_Exit_Event_Args)
+      );
+      args->scope_id = scope_id;
+      this->record_event(
+        call_id, CATS_EVENT_TYPE_SCOPE_EXIT, args, funcname, filename, line, col
+      );
+    }
 
     while (!this->_scope_stack.empty() &&
            this->_scope_stack.back() != scope_id) {
       auto top = this->_scope_stack.back();
 
-      Scope_Exit_Event_Args *inferred = (Scope_Exit_Event_Args *) malloc(
-        sizeof(Scope_Exit_Event_Args)
-      );
-      inferred->scope_id = top;
-      this->record_event(
-        call_id, CATS_EVENT_TYPE_SCOPE_EXIT, inferred, funcname, filename, line,
-        col
-      );
+      if (!recorded) {
+        Scope_Exit_Event_Args *inferred = (Scope_Exit_Event_Args *) malloc(
+          sizeof(Scope_Exit_Event_Args)
+        );
+        inferred->scope_id = top;
+        this->record_event(
+          call_id, CATS_EVENT_TYPE_SCOPE_EXIT, inferred, funcname, filename,
+          line, col
+        );
+      }
 
       this->_scope_stack.pop_back();
     }
