@@ -108,7 +108,8 @@ void LoopScopeTrackerPass::processLoop(
   Module *M = F->getParent();
 
   Constant *ScopeID = ConstantInt::get(
-      Type::getInt32Ty(Context), g_cats_instrument_scope_id++);
+      Type::getInt32Ty(Context), getCurrentScopeID(*M, true)
+    );
 
   // Create a global string constant for the filename
   Constant *FilenameStr =
@@ -132,7 +133,7 @@ void LoopScopeTrackerPass::processLoop(
       FilenameStr->getType(), FuncnameGV, Indices, true);
 
   Value *Args[] = {
-      ConstantInt::get(Type::getInt64Ty(Context), g_cats_instrument_call_id++),
+      ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(*M, true)),
       ScopeID,
       ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_LOOP),
       FuncnamePtr,
@@ -156,8 +157,7 @@ void LoopScopeTrackerPass::processLoop(
       Col = DL.getCol();
     }
     Value *ExitArgs[] = {
-        ConstantInt::get(
-            Type::getInt64Ty(Context), g_cats_instrument_call_id++),
+        ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(*M, true)),
         ScopeID,
         FuncnamePtr,
         FilenamePtr,

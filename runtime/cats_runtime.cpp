@@ -30,6 +30,9 @@ struct CATS_Debug_Info {
 };
 
 struct CATS_Event {
+#if CATS_RUNTIME_DEBUG
+  uint32_t call_id;
+#endif
   uint8_t event_type;
   CATS_Debug_Info debug_info;
   const void *args;
@@ -106,10 +109,13 @@ protected:
         return false;
     }
 
-    void record_event(uint8_t event_type, const void *args,
+    void record_event(uint32_t call_id, uint32_t event_type, const void *args,
                       const char *funcname, const char *filename,
                       uint32_t line, uint32_t col) {
         CATS_Event *event = (CATS_Event *) malloc(sizeof(CATS_Event));
+#if CATS_RUNTIME_DEBUG
+        event->call_id = call_id;
+#endif
         event->event_type = event_type;
         event->args = args;
 
@@ -190,7 +196,7 @@ public:
 
     args->size = size;
     this->record_event(
-      CATS_EVENT_TYPE_ALLOCATION, args, funcname, filename, line, col
+      call_id, CATS_EVENT_TYPE_ALLOCATION, args, funcname, filename, line, col
     );
 
     CATS_Alloc_Info alloc_info;
@@ -236,7 +242,8 @@ public:
 #endif
 
       this->record_event(
-        CATS_EVENT_TYPE_DEALLOCATION, args, funcname, filename, line, col
+        call_id, CATS_EVENT_TYPE_DEALLOCATION, args, funcname, filename, line,
+        col
       );
       this->_allocations.erase(it);
     }
@@ -284,7 +291,7 @@ public:
       args->is_write = is_write;
 
       this->record_event(
-        CATS_EVENT_TYPE_ACCESS, args, funcname, filename, line, col
+        call_id, CATS_EVENT_TYPE_ACCESS, args, funcname, filename, line, col
       );
     }
   }
@@ -332,7 +339,7 @@ public:
     args->scope_id = scope_id;
     args->type = type;
     this->record_event(
-      CATS_EVENT_TYPE_SCOPE_ENTRY, args, funcname, filename, line, col
+      call_id, CATS_EVENT_TYPE_SCOPE_ENTRY, args, funcname, filename, line, col
     );
 
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
@@ -361,7 +368,7 @@ public:
     );
     args->scope_id = scope_id;
     this->record_event(
-      CATS_EVENT_TYPE_SCOPE_EXIT, args, funcname, filename, line, col
+      call_id, CATS_EVENT_TYPE_SCOPE_EXIT, args, funcname, filename, line, col
     );
 
     while (!this->_scope_stack.empty() &&
@@ -373,7 +380,8 @@ public:
       );
       inferred->scope_id = top;
       this->record_event(
-        CATS_EVENT_TYPE_SCOPE_EXIT, inferred, funcname, filename, line, col
+        call_id, CATS_EVENT_TYPE_SCOPE_EXIT, inferred, funcname, filename, line,
+        col
       );
 
       this->_scope_stack.pop_back();
@@ -389,18 +397,6 @@ public:
 
   void save(const char *filepath) {
     std::lock_guard<std::mutex> guard(this->_mutex);
-
-    /*
-    std::string full_filepath;
-    if (!filepath || !*filepath || filepath[0] == '\0') {
-        full_filepath = "cats_trace.json";
-    } else {
-        full_filepath = filepath;
-    }
-
-    std::cout << "Saving trace to " << full_filepath << std::endl;
-    std::cout.flush();
-    */
 
     std::stringstream ss;
     ss << "cats_trace.json";
@@ -418,6 +414,9 @@ public:
         }
         ++it;
         ofs << "    {";
+#if CATS_RUNTIME_DEBUG
+        ofs << "\"call_id\": " << event->call_id << ", ";
+#endif
         ofs << "\"funcname\": \"";
         ofs << event->debug_info.funcname << "\", ";
         ofs << "\"filename\": \"";

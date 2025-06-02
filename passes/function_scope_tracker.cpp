@@ -80,8 +80,9 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
   }
 
   LLVMContext &Context = Builder.getContext();
+  Module *M = Inst->getModule();
   Value *ExitArgs[] = {
-      ConstantInt::get(Type::getInt64Ty(Context), g_cats_instrument_call_id++),
+      ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(*M, true)),
       ScopeID,
       FuncNamePtr,
       FilenamePtr,
@@ -141,7 +142,8 @@ bool processFunction(Module &M, Function &F, bool parallel) {
   }
 
   Constant *ScopeID = ConstantInt::get(
-    Type::getInt32Ty(M.getContext()), g_cats_instrument_scope_id++);
+    Type::getInt32Ty(M.getContext()), getCurrentScopeID(M, true)
+  );
 
   // Create a global string constant for the filename
   Constant *FilenameStr = ConstantDataArray::getString(Context, Filename);
@@ -167,7 +169,7 @@ bool processFunction(Module &M, Function &F, bool parallel) {
     Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION
   );
   Value *Args[] = {
-      ConstantInt::get(Type::getInt64Ty(Context), g_cats_instrument_call_id++),
+      ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(M, true)),
       ScopeID,
       ScopeType,
       FuncnamePtr,
@@ -268,13 +270,11 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
     }
   }
 
-  if (Modified && !g_cats_save_inserted) {
-    insertCatsTraceSave(M);
-  }
-
   if (Modified) {
+    insertCatsTraceSave(M);
     // Assuming conservatively that nothing is preserved
     return PreservedAnalyses::none();
   }
+
   return PreservedAnalyses::all();
 }

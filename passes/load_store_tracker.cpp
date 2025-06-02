@@ -107,7 +107,7 @@ bool LoadStoreTracker::runOnFunction(Function &F) {
             // Create a call ID constant
             Constant *CallID =
                 ConstantInt::get(Type::getInt64Ty(M->getContext()),
-                                g_cats_instrument_call_id++);
+                                 getCurrentCallID(*M, true));
 
             // Create a global string constant for the filename
             Constant *FilenameStr =
@@ -149,7 +149,7 @@ bool LoadStoreTracker::runOnFunction(Function &F) {
         }
     }
 
-    if (Modified && !g_cats_save_inserted) {
+    if (Modified) {
         insertCatsTraceSave(*M);
     }
 

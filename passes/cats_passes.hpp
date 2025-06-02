@@ -19,12 +19,9 @@
 #define LOOP_SCOPE_TRACKER_PASS_NAME      "cats-loop-scope-tracker"
 
 
-static uint64_t g_cats_instrument_call_id = 0;
-static uint32_t g_cats_instrument_scope_id = 0;
-static bool g_cats_save_inserted = false;
-
-
 void insertCatsTraceSave(llvm::Module &M);
+int getCurrentScopeID(llvm::Module &M, bool increment = true);
+int getCurrentCallID(llvm::Module &M, bool increment = true);
 bool functionHasAnnotation(llvm::Function &F, llvm::StringRef Annotation);
 
 class AllocationTracker : public llvm::FunctionPass {
