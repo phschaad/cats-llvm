@@ -12,9 +12,9 @@
 #include <vector>
 
 #define CATS_RUNTIME_DEBUG              1
-#define CATS_RUNTIME_PRINT_ALLOCATIONS  1
-#define CATS_RUNTIME_PRINT_ACCESSES     1
-#define CATS_RUNTIME_PRINT_SCOPES       1
+#define CATS_RUNTIME_PRINT_ALLOCATIONS  0
+#define CATS_RUNTIME_PRINT_ACCESSES     0
+#define CATS_RUNTIME_PRINT_SCOPES       0
 
 #define CATS_TRACE_FILE_NAME_SIZE       256
 #define CATS_TRACE_FUNC_NAME_SIZE       64
@@ -71,10 +71,9 @@ protected:
 
     std::deque<uint32_t> _scope_stack;
     std::map<const void *, CATS_Alloc_Info> _allocations;
-    std::map<uint32_t, std::vector<const char *>> _recorded_calls;
+    std::map<uint32_t, std::vector<std::string>> _recorded_calls;
     std::deque<CATS_Event *> _events;
 
-    /*
     std::string get_stack_identifier() {
         std::stringstream ss;
         auto it = this->_scope_stack.begin();
@@ -92,7 +91,7 @@ protected:
         auto it = this->_recorded_calls.find(call_id);
         auto stack_id = this->get_stack_identifier();
         if (it == this->_recorded_calls.end()) {
-            this->_recorded_calls[call_id] = std::vector<const char *>();
+            this->_recorded_calls[call_id] = std::vector<std::string>();
             this->_recorded_calls[call_id].push_back(stack_id);
             return false;
         } else {
@@ -106,7 +105,6 @@ protected:
         }
         return false;
     }
-    */
 
     void record_event(uint8_t event_type, const void *args,
                       const char *funcname, const char *filename,
@@ -167,6 +165,11 @@ public:
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
 
+    if (this->already_recorded(call_id)) {
+      // If this call has already been recorded, skip the allocation
+      return;
+    }
+
     Allocation_Event_Args *args = (Allocation_Event_Args *) malloc(
       sizeof(Allocation_Event_Args)
     );
@@ -206,6 +209,11 @@ public:
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
 
+    if (this->already_recorded(call_id)) {
+      // If this call has already been recorded, skip the allocation
+      return;
+    }
+
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
     std::cout << "Deallocating at " << address
               << " in " << funcname << std::endl;
@@ -240,6 +248,11 @@ public:
     const char *filename, uint32_t line, uint32_t col
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
+
+    if (this->already_recorded(call_id)) {
+      // If this call has already been recorded, skip the allocation
+      return;
+    }
 
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ACCESSES
     std::cout << "Accessing " << (is_write ? "write" : "read")
@@ -303,6 +316,16 @@ public:
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
 
+    std::cout << "Entering scope " << scope_id
+              << " of type " << (int) type
+              << " in " << funcname << std::endl;
+    if (this->already_recorded(call_id)) {
+      std::cout << "Scope entry already recorded for call_id "
+                << call_id << std::endl;
+      // If this call has already been recorded, skip the allocation
+      return;
+    }
+
     Scope_Entry_Event_Args *args = (Scope_Entry_Event_Args *) malloc(
       sizeof(Scope_Entry_Event_Args)
     );
@@ -312,9 +335,11 @@ public:
       CATS_EVENT_TYPE_SCOPE_ENTRY, args, funcname, filename, line, col
     );
 
+#if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_SCOPES
     std::cout << "Entering scope " << scope_id
               << " of type " << (int) type
               << " in " << funcname << std::endl;
+#endif
 
     this->_scope_stack.push_back(scope_id);
   }
@@ -325,6 +350,11 @@ public:
     uint32_t line, uint32_t col
   ) {
     std::lock_guard<std::mutex> guard(this->_mutex);
+
+    if (this->already_recorded(call_id)) {
+      // If this call has already been recorded, skip the allocation
+      return;
+    }
 
     Scope_Exit_Event_Args *args = (Scope_Exit_Event_Args *) malloc(
       sizeof(Scope_Exit_Event_Args)

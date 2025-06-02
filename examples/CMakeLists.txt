@@ -23,7 +23,7 @@ endif()
 # List of example targets
 set(EXAMPLES gemm)
 
-set(PASSES cats-allocation-tracker,cats-load-store-tracker,cats-loop-scope-tracker)
+set(PASSES "cats-function-scope-tracker,function(cats-allocation-tracker),function(cats-load-store-tracker),function(cats-loop-scope-tracker)")
 
 foreach(example ${EXAMPLES})
     set(src_file "${CMAKE_CURRENT_SOURCE_DIR}/${example}.cpp")
@@ -42,7 +42,12 @@ foreach(example ${EXAMPLES})
     # Step 2: Run opt with pass plugins
     add_custom_command(
         OUTPUT ${ll_file}
-        COMMAND opt -S -load-pass-plugin=${PASS_PLUGIN_SO} -passes=${PASSES} -o ${ll_file} ${bc_file}
+        COMMAND opt
+                -S
+                -load-pass-plugin=${PASS_PLUGIN_SO}
+                "-passes='${PASSES}'"
+                -o ${ll_file}
+                ${bc_file}
         DEPENDS ${bc_file} ${PASS_PLUGIN_SO}
         COMMENT "Running opt passes on ${bc_file}"
     )

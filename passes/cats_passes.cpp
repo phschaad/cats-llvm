@@ -21,6 +21,16 @@ PassPluginLibraryInfo getCallTrackerPassPluginInfo() {
 
     // Only runs with the corresponding `opt -passes` arguments
     PB.registerPipelineParsingCallback(
+        [](StringRef Name, ModulePassManager &MPM,
+           ArrayRef<PassBuilder::PipelineElement>) {
+          if (Name == FUNCTION_SCOPE_TRACKER_PASS_NAME) {
+            MPM.addPass(FunctionScopeTrackerPass());
+            return true;
+          }
+          return false;
+        });
+
+    PB.registerPipelineParsingCallback(
         [](StringRef Name, FunctionPassManager &FPM,
            ArrayRef<PassBuilder::PipelineElement>) {
           if (Name == ALLOCATION_TRACKER_PASS_NAME) {
@@ -35,13 +45,6 @@ PassPluginLibraryInfo getCallTrackerPassPluginInfo() {
           }
 
           return false;
-        });
-
-    PB.registerPipelineParsingCallback(
-        [](StringRef Name, ModulePassManager &MPM,
-           ArrayRef<PassBuilder::PipelineElement>) {
-          MPM.addPass(FunctionScopeTrackerPass());
-          return true;
         });
   };
 

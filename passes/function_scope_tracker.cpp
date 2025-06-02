@@ -90,8 +90,12 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
   Builder.CreateCall(ExitFunc, ExitArgs);
 }
 
-bool processFunction(Module &M, Function &F) {
-  bool Modified = false;
+bool processFunction(Module &M, Function &F, bool parallel) {
+  if (F.hasFnAttribute("cats_function_instrumented")) {
+    errs() << "Function " << F.getName()
+           << " is already instrumented, skipping.\n";
+    return false;
+  }
 
   LLVMContext &Context = M.getContext();
 
@@ -157,10 +161,15 @@ bool processFunction(Module &M, Function &F) {
   Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
       FilenameStr->getType(), FuncnameGV, Indices, true);
 
+  auto *ScopeType = parallel ? ConstantInt::get(
+    Type::getInt8Ty(Context), CATS_SCOPE_TYPE_PARALLEL
+  ) : ConstantInt::get(
+    Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION
+  );
   Value *Args[] = {
       ConstantInt::get(Type::getInt64Ty(Context), g_cats_instrument_call_id++),
       ScopeID,
-      ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION),
+      ScopeType,
       FuncnamePtr,
       FilenamePtr,
       ConstantInt::get(Type::getInt32Ty(Context), Line),
@@ -215,7 +224,6 @@ bool processFunction(Module &M, Function &F) {
   for (BasicBlock &BB : F) {
     Instruction *Terminator = BB.getTerminator();
     if (isa<UnreachableInst>(Terminator)) {
-      outs() << "Terminator: " << *Terminator << "\n";
       Builder.SetInsertPoint(Terminator);
       instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
                      FilenamePtr, Terminator);
@@ -227,7 +235,11 @@ bool processFunction(Module &M, Function &F) {
     }*/
   }
 
-  return Modified;
+  // Mark the function as instrumented
+  errs() << "Instrumenting function: " << F.getName() << "\n";
+  F.addFnAttr("cats_function_instrumented");
+
+  return true;
 }
 
 PreservedAnalyses FunctionScopeTrackerPass::run(
@@ -244,13 +256,13 @@ PreservedAnalyses FunctionScopeTrackerPass::run(
     }
 
     auto &ModuleOMPRes = MAM.getResult<OMPScopeFinder>(M);
-    // Now use the module-level analysis results
+    bool isParallel = false;
     if (ModuleOMPRes.OutlinedFunctions.count(F.getName().str())) {
-      errs() << "Skipping outlined function " << F.getName() << "\n";
-      continue;
+      isParallel = true;
     }
 
-    if (processFunction(M, F)) {
+    // Process function scopes
+    if (processFunction(M, F, isParallel)) {
       // If we modified the function, we assume that nothing is preserved
       Modified = true;
     }
