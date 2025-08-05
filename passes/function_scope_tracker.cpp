@@ -16,8 +16,9 @@ using namespace llvm;
 
 
 void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
-                    Constant *ScopeID, Constant *FuncNamePtr,
-                    Constant *FilenamePtr, Instruction *Inst) {
+                    Constant *ScopeID, Constant *ScopeType,
+                    Constant *FuncNamePtr, Constant *FilenamePtr,
+                    Instruction *Inst) {
   // Get debug location information
   const DebugLoc &DL = Inst->getDebugLoc();
   unsigned Line = 0;
@@ -35,6 +36,7 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
         Type::getInt64Ty(Context), generateUniqueInt64ID(), false
       ),
       ScopeID,
+      ScopeType,
       FuncNamePtr,
       FilenamePtr,
       ConstantInt::get(Type::getInt32Ty(Context), Line),
@@ -69,6 +71,7 @@ bool processFunction(Module &M, Function &F) {
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
                        Type::getInt64Ty(Context),       /*scope_id*/
+                       Type::getInt8Ty(Context),        /*scope_type*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
                        Type::getInt32Ty(Context),       /*line*/
@@ -97,6 +100,11 @@ bool processFunction(Module &M, Function &F) {
     Type::getInt64Ty(M.getContext()), generateUniqueInt64ID(), false
   );
 
+  // Create a constant for the scope type (function)
+  ConstantInt *ScopeType = ConstantInt::get(
+    Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION
+  );
+
   // Create a global string constant for the filename
   Constant *FilenameStr = ConstantDataArray::getString(Context, Filename);
   Constant *FuncnameStr = ConstantDataArray::getString(Context, F.getName());
@@ -115,15 +123,12 @@ bool processFunction(Module &M, Function &F) {
   Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
       FilenameStr->getType(), FuncnameGV, Indices, true);
 
-  outs() << "Instrumenting function: " << F.getName() << "\n";
-  outs() << "Scope UUID: " << ScopeID << "\n";
-
   Value *Args[] = {
       ConstantInt::get(
         Type::getInt64Ty(Context), generateUniqueInt64ID(), false
       ),
       ScopeID,
-      ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION),
+      ScopeType,
       FuncnamePtr,
       FilenamePtr,
       ConstantInt::get(Type::getInt32Ty(Context), Line),
@@ -138,7 +143,7 @@ bool processFunction(Module &M, Function &F) {
     Instruction *Terminator = BB.getTerminator();
     if (ReturnInst *RI = dyn_cast<ReturnInst>(Terminator)) {
       Builder.SetInsertPoint(RI);
-      instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
+      instrumentExit(Builder, ExitFunc, ScopeID, ScopeType, FuncnamePtr,
                      FilenamePtr, RI);
     }
   }
@@ -150,7 +155,7 @@ bool processFunction(Module &M, Function &F) {
         // Insert in the unwind destination (landing pad)
         BasicBlock *UnwindDest = II->getUnwindDest();
         Builder.SetInsertPoint(&*UnwindDest->getFirstInsertionPt());
-        instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
+        instrumentExit(Builder, ExitFunc, ScopeID, ScopeType, FuncnamePtr,
                        FilenamePtr, II);
       }
     }
@@ -163,7 +168,7 @@ bool processFunction(Module &M, Function &F) {
         if (CI->getCalledFunction() &&
             CI->getCalledFunction()->getName() == "llvm.stackrestore") {
           Builder.SetInsertPoint(CI);
-          instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
+          instrumentExit(Builder, ExitFunc, ScopeID, ScopeType, FuncnamePtr,
                          FilenamePtr, CI);
         }
       }
@@ -179,7 +184,7 @@ bool processFunction(Module &M, Function &F) {
     Instruction *Terminator = BB.getTerminator();
     if (isa<UnreachableInst>(Terminator)) {
       Builder.SetInsertPoint(Terminator);
-      instrumentExit(Builder, ExitFunc, ScopeID, FuncnamePtr,
+      instrumentExit(Builder, ExitFunc, ScopeID, ScopeType, FuncnamePtr,
                      FilenamePtr, Terminator);
     }/* else
     if (!isa<ReturnInst>(Terminator) && !isa<InvokeInst>(Terminator)) {

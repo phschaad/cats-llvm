@@ -39,6 +39,7 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
                        Type::getInt64Ty(Context),       /*scope_id*/
+                       Type::getInt8Ty(Context),        /*scope_type*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
                        Type::getInt32Ty(Context),       /*line*/
@@ -81,6 +82,10 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
               Type::getInt64Ty(M.getContext()), generateUniqueInt64ID(), false
             );
 
+            Constant *ScopeType = ConstantInt::get(
+              Type::getInt8Ty(Context), CATS_SCOPE_TYPE_PARALLEL
+            );
+
             // Create a global string constant for the filename
             Constant *FilenameStr = ConstantDataArray::getString(
               Context, Filename
@@ -103,17 +108,12 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
             Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
                 FilenameStr->getType(), FuncnameGV, Indices, true);
 
-            outs() << "Instrumenting parallel scope in function: "
-                   << F.getName() << "\n";
-            outs() << "Scope ID: " << ScopeID->getUniqueInteger() << "\n";
             Value *EntryArgs[] = {
                 ConstantInt::get(
                   Type::getInt64Ty(Context), generateUniqueInt64ID(), false
                 ),
                 ScopeID,
-                ConstantInt::get(
-                  Type::getInt8Ty(Context), CATS_SCOPE_TYPE_PARALLEL
-                ),
+                ScopeType,
                 FuncnamePtr,
                 FilenamePtr,
                 ConstantInt::get(Type::getInt32Ty(Context), Line),
@@ -123,6 +123,7 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
                   Type::getInt64Ty(Context), generateUniqueInt64ID(), false
                 ),
                 ScopeID,
+                ScopeType,
                 FuncnamePtr,
                 FilenamePtr,
                 ConstantInt::get(Type::getInt32Ty(Context), Line),

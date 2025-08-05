@@ -126,8 +126,6 @@ uint64_t generateUniqueInt64ID() {
     scope_id = 1;
   }
 
-  outs() << "Generated unique ID: " << scope_id << "\n";
-  
   return scope_id;
 }
 

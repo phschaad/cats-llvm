@@ -64,7 +64,7 @@ CATS_RUNTIME_API void cats_trace_instrument_scope_entry(
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_scope_exit(
-    uint64_t call_id, uint64_t scope_id,
+    uint64_t call_id, uint64_t scope_id, uint8_t scope_type,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 

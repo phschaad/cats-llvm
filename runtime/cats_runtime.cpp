@@ -14,26 +14,30 @@
 #include <omp.h>
 
 #ifndef CATS_RUNTIME_DEBUG
-#define CATS_RUNTIME_DEBUG              0
+#define CATS_RUNTIME_DEBUG                          0
 #endif
 #ifndef CATS_RUNTIME_PRINT_ALLOCATIONS
-#define CATS_RUNTIME_PRINT_ALLOCATIONS  0
+#define CATS_RUNTIME_PRINT_ALLOCATIONS              0
 #endif
 #ifndef CATS_RUNTIME_PRINT_ACCESSES
-#define CATS_RUNTIME_PRINT_ACCESSES     0
+#define CATS_RUNTIME_PRINT_ACCESSES                 0
 #endif
 #ifndef CATS_RUNTIME_PRINT_SCOPES
-#define CATS_RUNTIME_PRINT_SCOPES       0
+#define CATS_RUNTIME_PRINT_SCOPES                   0
+#endif
+
+#ifndef CATS_RUNTIME_WARN_ON_SCOPE_EXIT_NOT_FOUND
+#define CATS_RUNTIME_WARN_ON_SCOPE_EXIT_NOT_FOUND   0
 #endif
 
 #ifndef CATS_TRACE_FILE_NAME_SIZE
-#define CATS_TRACE_FILE_NAME_SIZE       256
+#define CATS_TRACE_FILE_NAME_SIZE                   256
 #endif
 #ifndef CATS_TRACE_FUNC_NAME_SIZE
-#define CATS_TRACE_FUNC_NAME_SIZE       64
+#define CATS_TRACE_FUNC_NAME_SIZE                   64
 #endif
 #ifndef CATS_TRACE_BUFFER_NAME_SIZE
-#define CATS_TRACE_BUFFER_NAME_SIZE     64
+#define CATS_TRACE_BUFFER_NAME_SIZE                 64
 #endif
 
 namespace cats {
@@ -378,8 +382,8 @@ public:
 
   void instrument_scope_exit(
     uint64_t call_id,
-    uint64_t scope_id, const char *funcname, const char *filename,
-    uint32_t line, uint32_t col
+    uint64_t scope_id, uint8_t scope_type, const char *funcname,
+    const char *filename, uint32_t line, uint32_t col
   ) {
     if (omp_in_parallel() && omp_get_thread_num() != 0) {
       // If we are in a parallel region, only the master thread should exit
@@ -434,9 +438,18 @@ public:
     }
 
     if (this->_scope_stack.empty() || this->_scope_stack.back() != scope_id) {
-      std::cout << "Warning: Exiting scope " << scope_id << " not found. ";
-      std::cout << "This is likely an error leading to an incorrect trace";
-      std::cout << std::endl;
+#if CATS_RUNTIME_WARN_ON_SCOPE_EXIT_NOT_FOUND
+      if (scope_type != CATS_SCOPE_TYPE_PARALLEL) {
+        // We suppress the warning for parallel scopes since there can be
+        // multiple exits from parallel regions.
+        // TODO: This is a workaround, we should handle parallel scopes
+        // differently and correctly insert only one exit.
+        std::cout << "Warning: Exiting scope " << scope_id << " not found. ";
+        std::cout << "This is likely an error leading to an incorrect trace. ";
+        std::cout << "(Scope type:" << scope_type << ")";
+        std::cout << std::endl;
+      }
+#endif
     } else {
       this->_scope_stack.pop_back();
     }
@@ -608,11 +621,11 @@ void cats_trace_instrument_scope_entry(
 }
 
 void cats_trace_instrument_scope_exit(
-  uint64_t call_id, uint64_t scope_id,
+  uint64_t call_id, uint64_t scope_id, uint8_t scope_type,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_scope_exit(
-    call_id, scope_id, funcname, filename, line, col
+    call_id, scope_id, scope_type, funcname, filename, line, col
   );
 }
 
