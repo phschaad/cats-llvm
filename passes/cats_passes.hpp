@@ -22,6 +22,7 @@
 
 void insertCatsTraceSave(llvm::Module &M);
 int getCurrentScopeID(llvm::Module &M, bool increment = true);
+uint64_t generateUniqueInt64ID();
 int getCurrentCallID(llvm::Module &M, bool increment = true);
 bool functionHasAnnotation(llvm::Function &F, llvm::StringRef Annotation);
 

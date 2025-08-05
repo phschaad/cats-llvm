@@ -38,7 +38,7 @@ PreservedAnalyses LoopScopeTrackerPass::run(
     "cats_trace_instrument_scope_entry",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
-                       Type::getInt32Ty(Context),       /*scope_id*/
+                       Type::getInt64Ty(Context),       /*scope_id*/
                        Type::getInt8Ty(Context),        /*scope_type*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
@@ -50,7 +50,7 @@ PreservedAnalyses LoopScopeTrackerPass::run(
     "cats_trace_instrument_scope_exit",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
-                       Type::getInt32Ty(Context),       /*scope_id*/
+                       Type::getInt64Ty(Context),       /*scope_id*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
                        Type::getInt32Ty(Context),       /*line*/
@@ -108,8 +108,8 @@ void LoopScopeTrackerPass::processLoop(
   Module *M = F->getParent();
 
   Constant *ScopeID = ConstantInt::get(
-      Type::getInt32Ty(Context), getCurrentScopeID(*M, true)
-    );
+    Type::getInt64Ty(Context), generateUniqueInt64ID(), false
+  );
 
   // Create a global string constant for the filename
   Constant *FilenameStr =
@@ -133,7 +133,9 @@ void LoopScopeTrackerPass::processLoop(
       FilenameStr->getType(), FuncnameGV, Indices, true);
 
   Value *Args[] = {
-      ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(*M, true)),
+      ConstantInt::get(
+        Type::getInt64Ty(Context), generateUniqueInt64ID(), false
+      ),
       ScopeID,
       ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_LOOP),
       FuncnamePtr,
@@ -157,7 +159,9 @@ void LoopScopeTrackerPass::processLoop(
       Col = DL.getCol();
     }
     Value *ExitArgs[] = {
-        ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(*M, true)),
+        ConstantInt::get(
+          Type::getInt64Ty(Context), generateUniqueInt64ID(), false
+        ),
         ScopeID,
         FuncnamePtr,
         FilenamePtr,

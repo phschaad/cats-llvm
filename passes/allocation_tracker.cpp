@@ -144,9 +144,9 @@ bool AllocationTracker::runOnFunction(Function &F) {
           }
 
           // Crate a call ID constant
-          Constant *CallID =
-              ConstantInt::get(Type::getInt64Ty(M->getContext()),
-                               getCurrentCallID(*M, true));
+          Constant *CallID = ConstantInt::get(
+            Type::getInt64Ty(M->getContext()), generateUniqueInt64ID(), false
+          );
 
           // Create a global string constant for the filename
           Constant *FilenameStr =

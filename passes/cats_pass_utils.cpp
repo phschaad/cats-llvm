@@ -4,6 +4,11 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
+#include <random>
+#include <sstream>
+#include <iomanip>
+#include <functional>
+
 using namespace llvm;
 
 void insertCatsTraceSave(Module &M) {
@@ -72,6 +77,58 @@ int getCurrentScopeID(Module &M, bool increment) {
   NamedMDNode *NMD = M.getOrInsertNamedMetadata("cats.trace.current_scope_id");
   NMD->addOperand(InitialNode);
   return 0;
+}
+
+std::string generateUUID() {
+  // Generate a UUID string
+  static std::random_device rd;
+  static std::mt19937 gen(rd());
+  static std::uniform_int_distribution<> dis(0, 15);
+  static std::uniform_int_distribution<> dis2(8, 11);
+
+  std::stringstream ss;
+  int i;
+  ss << std::hex;
+  for (i = 0; i < 8; i++) {
+    ss << dis(gen);
+  }
+  ss << "-";
+  for (i = 0; i < 4; i++) {
+    ss << dis(gen);
+  }
+  ss << "-4";
+  for (i = 0; i < 3; i++) {
+    ss << dis(gen);
+  }
+  ss << "-";
+  ss << dis2(gen);
+  for (i = 0; i < 3; i++) {
+    ss << dis(gen);
+  }
+  ss << "-";
+  for (i = 0; i < 12; i++) {
+    ss << dis(gen);
+  }
+  return ss.str();
+}
+
+uint64_t generateUniqueInt64ID() {
+  // Generate a 64-bit scope ID based on a UUID.
+  std::string uuid = generateUUID();
+  
+  // Simple hash function to convert UUID string to 64-bit integer
+  std::hash<std::string> hasher;
+  size_t hash = hasher(uuid);
+  
+  // Convert to 64-bit and ensure it's not zero
+  uint64_t scope_id = static_cast<uint64_t>(hash);
+  if (scope_id == 0) {
+    scope_id = 1;
+  }
+
+  outs() << "Generated unique ID: " << scope_id << "\n";
+  
+  return scope_id;
 }
 
 int getCurrentCallID(Module &M, bool increment) {

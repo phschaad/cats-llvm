@@ -26,7 +26,7 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
     "cats_trace_instrument_scope_entry",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
-                       Type::getInt32Ty(Context),       /*scope_id*/
+                       Type::getInt64Ty(Context),       /*scope_id*/
                        Type::getInt8Ty(Context),        /*scope_type*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
@@ -37,8 +37,8 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
   FunctionCallee ExitFunc = M.getOrInsertFunction(
     "cats_trace_instrument_scope_exit",
     FunctionType::get(Type::getVoidTy(Context),
-                      {Type::getInt64Ty(Context),        /*call_id*/
-                       Type::getInt32Ty(Context),       /*scope_id*/
+                      {Type::getInt64Ty(Context),       /*call_id*/
+                       Type::getInt64Ty(Context),       /*scope_id*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
                        Type::getInt32Ty(Context),       /*line*/
@@ -78,7 +78,7 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
             }
 
             Constant *ScopeID = ConstantInt::get(
-              Type::getInt32Ty(M.getContext()), getCurrentScopeID(M, true)
+              Type::getInt64Ty(M.getContext()), generateUniqueInt64ID(), false
             );
 
             // Create a global string constant for the filename
@@ -103,9 +103,12 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
             Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
                 FilenameStr->getType(), FuncnameGV, Indices, true);
 
+            outs() << "Instrumenting parallel scope in function: "
+                   << F.getName() << "\n";
+            outs() << "Scope ID: " << ScopeID->getUniqueInteger() << "\n";
             Value *EntryArgs[] = {
                 ConstantInt::get(
-                  Type::getInt64Ty(Context), getCurrentCallID(M, true)
+                  Type::getInt64Ty(Context), generateUniqueInt64ID(), false
                 ),
                 ScopeID,
                 ConstantInt::get(
@@ -117,7 +120,7 @@ PreservedAnalyses ParallelScopeTrackerPass::run(
                 ConstantInt::get(Type::getInt32Ty(Context), Col)};
             Value *ExitArgs[] = {
                 ConstantInt::get(
-                  Type::getInt64Ty(Context), getCurrentCallID(M, true)
+                  Type::getInt64Ty(Context), generateUniqueInt64ID(), false
                 ),
                 ScopeID,
                 FuncnamePtr,

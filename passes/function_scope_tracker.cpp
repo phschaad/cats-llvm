@@ -31,7 +31,9 @@ void instrumentExit(IRBuilder<> &Builder, FunctionCallee ExitFunc,
   LLVMContext &Context = Builder.getContext();
   Module *M = Inst->getModule();
   Value *ExitArgs[] = {
-      ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(*M, true)),
+      ConstantInt::get(
+        Type::getInt64Ty(Context), generateUniqueInt64ID(), false
+      ),
       ScopeID,
       FuncNamePtr,
       FilenamePtr,
@@ -54,7 +56,7 @@ bool processFunction(Module &M, Function &F) {
     "cats_trace_instrument_scope_entry",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
-                       Type::getInt32Ty(Context),       /*scope_id*/
+                       Type::getInt64Ty(Context),       /*scope_id*/
                        Type::getInt8Ty(Context),        /*scope_type*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
@@ -66,7 +68,7 @@ bool processFunction(Module &M, Function &F) {
     "cats_trace_instrument_scope_exit",
     FunctionType::get(Type::getVoidTy(Context),
                       {Type::getInt64Ty(Context),       /*call_id*/
-                       Type::getInt32Ty(Context),       /*scope_id*/
+                       Type::getInt64Ty(Context),       /*scope_id*/
                        PointerType::getUnqual(Context), /*funcname*/
                        PointerType::getUnqual(Context), /*filename*/
                        Type::getInt32Ty(Context),       /*line*/
@@ -90,8 +92,9 @@ bool processFunction(Module &M, Function &F) {
     }
   }
 
-  Constant *ScopeID = ConstantInt::get(
-    Type::getInt32Ty(M.getContext()), getCurrentScopeID(M, true)
+  // Generate a unique UUID-based scope ID
+  ConstantInt *ScopeID = ConstantInt::get(
+    Type::getInt64Ty(M.getContext()), generateUniqueInt64ID(), false
   );
 
   // Create a global string constant for the filename
@@ -112,8 +115,13 @@ bool processFunction(Module &M, Function &F) {
   Constant *FuncnamePtr = ConstantExpr::getGetElementPtr(
       FilenameStr->getType(), FuncnameGV, Indices, true);
 
+  outs() << "Instrumenting function: " << F.getName() << "\n";
+  outs() << "Scope UUID: " << ScopeID << "\n";
+
   Value *Args[] = {
-      ConstantInt::get(Type::getInt64Ty(Context), getCurrentCallID(M, true)),
+      ConstantInt::get(
+        Type::getInt64Ty(Context), generateUniqueInt64ID(), false
+      ),
       ScopeID,
       ConstantInt::get(Type::getInt8Ty(Context), CATS_SCOPE_TYPE_FUNCTION),
       FuncnamePtr,

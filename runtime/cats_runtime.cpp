@@ -47,7 +47,7 @@ struct CATS_Debug_Info {
 
 struct CATS_Event {
 #if CATS_RUNTIME_DEBUG
-  uint32_t call_id;
+  uint64_t call_id;
 #endif
   uint8_t event_type;
   CATS_Debug_Info debug_info;
@@ -69,12 +69,12 @@ struct Access_Event_Args {
 };
 
 struct Scope_Entry_Event_Args {
-  uint32_t scope_id;
+  uint64_t scope_id;
   uint8_t type;
 };
 
 struct Scope_Exit_Event_Args {
-  uint32_t scope_id;
+  uint64_t scope_id;
 };
 
 struct CATS_Alloc_Info {
@@ -88,9 +88,9 @@ protected:
 
     std::mutex _mutex;
 
-    std::deque<uint32_t> _scope_stack;
+    std::deque<uint64_t> _scope_stack;
     std::map<const void *, CATS_Alloc_Info> _allocations;
-    std::map<uint32_t, std::vector<std::string>> _recorded_calls;
+    std::map<uint64_t, std::vector<std::string>> _recorded_calls;
     std::deque<CATS_Event *> _events;
 
     std::string get_stack_identifier() {
@@ -106,7 +106,7 @@ protected:
       return ss.str();
     }
 
-    bool already_recorded(uint32_t call_id) {
+    bool already_recorded(uint64_t call_id) {
       auto it = this->_recorded_calls.find(call_id);
       auto stack_id = this->get_stack_identifier();
       if (it == this->_recorded_calls.end()) {
@@ -125,7 +125,7 @@ protected:
       return false;
     }
 
-    void record_event(uint32_t call_id, uint32_t event_type, const void *args,
+    void record_event(uint64_t call_id, uint32_t event_type, const void *args,
                       const char *funcname, const char *filename,
                       uint32_t line, uint32_t col) {
       CATS_Event *event = (CATS_Event *) malloc(sizeof(CATS_Event));
@@ -181,7 +181,7 @@ public:
   }
 
   void instrument_alloc(
-    uint32_t call_id,
+    uint64_t call_id,
     const char *buffer_name, void *address, size_t size,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
   ) {
@@ -225,7 +225,7 @@ public:
   }
 
   void instrument_dealloc(
-    uint32_t call_id,
+    uint64_t call_id,
     void *address, const char *funcname, const char *filename,
     uint32_t line, uint32_t col
   ) {
@@ -266,7 +266,7 @@ public:
   }
 
   void instrument_access(
-    uint32_t call_id,
+    uint64_t call_id,
     void *address, bool is_write, const char *funcname,
     const char *filename, uint32_t line, uint32_t col
   ) {
@@ -319,7 +319,7 @@ public:
   }
 
   void instrument_read(
-    uint32_t call_id,
+    uint64_t call_id,
     void *address, const char *funcname, const char *filename,
     uint32_t line, uint32_t col
   ) {
@@ -329,7 +329,7 @@ public:
   }
 
   void instrument_write(
-    uint32_t call_id,
+    uint64_t call_id,
     void *address, const char *funcname, const char *filename,
     uint32_t line, uint32_t col
   ) {
@@ -339,8 +339,8 @@ public:
   }
 
   void instrument_scope_entry(
-    uint32_t call_id,
-    uint32_t scope_id, uint8_t type, const char *funcname,
+    uint64_t call_id,
+    uint64_t scope_id, uint8_t type, const char *funcname,
     const char *filename, uint32_t line, uint32_t col
   ) {
     if (omp_in_parallel() && omp_get_thread_num() != 0) {
@@ -377,8 +377,8 @@ public:
   }
 
   void instrument_scope_exit(
-    uint32_t call_id,
-    uint32_t scope_id, const char *funcname, const char *filename,
+    uint64_t call_id,
+    uint64_t scope_id, const char *funcname, const char *filename,
     uint32_t line, uint32_t col
   ) {
     if (omp_in_parallel() && omp_get_thread_num() != 0) {
@@ -434,8 +434,9 @@ public:
     }
 
     if (this->_scope_stack.empty() || this->_scope_stack.back() != scope_id) {
-      printf("Warning: Exiting scope %d not found.\n", scope_id);
-      printf("  This is likely an error leading to an incorrect trace\n");
+      std::cout << "Warning: Exiting scope " << scope_id << " not found. ";
+      std::cout << "This is likely an error leading to an incorrect trace";
+      std::cout << std::endl;
     } else {
       this->_scope_stack.pop_back();
     }
@@ -445,7 +446,7 @@ public:
     std::lock_guard<std::mutex> guard(this->_mutex);
 
     std::stringstream ss;
-    ss << "cats_trace.json";
+    ss << "cats_trace.cats";
 
     {
       std::ofstream ofs(ss.str(), std::ios::binary);
@@ -552,7 +553,7 @@ void cats_trace_reset() {
 }
 
 void cats_trace_instrument_alloc(
-  uint32_t call_id, const char *buffer_name, void *address, size_t size,
+  uint64_t call_id, const char *buffer_name, void *address, size_t size,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_alloc(
@@ -561,7 +562,7 @@ void cats_trace_instrument_alloc(
 }
 
 void cats_trace_instrument_dealloc(
-  uint32_t call_id, void *address,
+  uint64_t call_id, void *address,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_dealloc(
@@ -570,7 +571,7 @@ void cats_trace_instrument_dealloc(
 }
 
 void cats_trace_instrument_access(
-  uint32_t call_id, void *address, bool is_write,
+  uint64_t call_id, void *address, bool is_write,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_access(
@@ -579,7 +580,7 @@ void cats_trace_instrument_access(
 }
 
 void cats_trace_instrument_read(
-  uint32_t call_id, void *address,
+  uint64_t call_id, void *address,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_read(
@@ -588,7 +589,7 @@ void cats_trace_instrument_read(
 }
 
 void cats_trace_instrument_write(
-  uint32_t call_id, void *address,
+  uint64_t call_id, void *address,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_write(
@@ -597,7 +598,7 @@ void cats_trace_instrument_write(
 }
 
 void cats_trace_instrument_scope_entry(
-  uint32_t call_id, uint32_t scope_id, uint8_t scope_type,
+  uint64_t call_id, uint64_t scope_id, uint8_t scope_type,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_scope_entry(
@@ -607,7 +608,7 @@ void cats_trace_instrument_scope_entry(
 }
 
 void cats_trace_instrument_scope_exit(
-  uint32_t call_id, uint32_t scope_id,
+  uint64_t call_id, uint64_t scope_id,
   const char *funcname, const char *filename, uint32_t line, uint32_t col
 ) {
   g_cats_trace.instrument_scope_exit(

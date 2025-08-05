@@ -34,37 +34,37 @@ extern "C" {
 CATS_RUNTIME_API void cats_trace_reset();
 
 CATS_RUNTIME_API void cats_trace_instrument_alloc(
-    uint32_t call_id, const char *buffer_name, void *address, size_t size,
+    uint64_t call_id, const char *buffer_name, void *address, size_t size,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_dealloc(
-    uint32_t call_id, void *address,
+    uint64_t call_id, void *address,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_access(
-    uint32_t call_id, void *address, bool is_write,
+    uint64_t call_id, void *address, bool is_write,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_read(
-    uint32_t call_id, void *address,
+    uint64_t call_id, void *address,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_write(
-    uint32_t call_id, void *address,
+    uint64_t call_id, void *address,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_scope_entry(
-    uint32_t call_id, uint32_t scope_id, uint8_t scope_type,
+    uint64_t call_id, uint64_t scope_id, uint8_t scope_type,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
 CATS_RUNTIME_API void cats_trace_instrument_scope_exit(
-    uint32_t call_id, uint32_t scope_id,
+    uint64_t call_id, uint64_t scope_id,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
 );
 
