@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <unordered_set>
 #include <mutex>
 #include <sstream>
 #include <vector>
@@ -93,6 +94,7 @@ protected:
     std::mutex _mutex;
 
     std::deque<uint64_t> _scope_stack;
+    std::unordered_set<uint64_t> _scope_ids;
     std::map<const void *, CATS_Alloc_Info> _allocations;
     std::map<uint64_t, std::vector<std::string>> _recorded_calls;
     std::deque<CATS_Event *> _events;
@@ -180,6 +182,7 @@ public:
     }
     this->_events.clear();
     this->_allocations.clear();
+    this->_scope_ids.clear();
     this->_scope_stack.clear();
     this->_recorded_calls.clear();
   }
@@ -189,6 +192,12 @@ public:
     const char *buffer_name, void *address, size_t size,
     const char *funcname, const char *filename, uint32_t line, uint32_t col
   ) {
+    if (omp_in_parallel() && omp_get_thread_num() != 0) {
+      // If we are in a parallel region, only the master thread should exit
+      // the scope, so we skip this call.
+      return;
+    }
+
     std::lock_guard<std::mutex> guard(this->_mutex);
 
     if (this->already_recorded(call_id)) {
@@ -233,6 +242,12 @@ public:
     void *address, const char *funcname, const char *filename,
     uint32_t line, uint32_t col
   ) {
+    if (omp_in_parallel() && omp_get_thread_num() != 0) {
+      // If we are in a parallel region, only the master thread should exit
+      // the scope, so we skip this call.
+      return;
+    }
+
     std::lock_guard<std::mutex> guard(this->_mutex);
 
     if (this->already_recorded(call_id)) {
@@ -364,6 +379,7 @@ public:
     // The scope must be entered regardless of whether it has been
     // recorded before, so we push it onto the stack
     this->_scope_stack.push_back(scope_id);
+    this->_scope_ids.insert(scope_id);
 
     if (this->already_recorded(call_id)) {
       // If this call has already been recorded, skip the allocation
@@ -397,6 +413,14 @@ public:
     std::cout << "Exiting scope " << scope_id
               << " in " << funcname << std::endl;
 #endif
+
+    if (this->_scope_ids.erase(scope_id) == 0) {
+#if CATS_RUNTIME_WARN_ON_SCOPE_EXIT_NOT_FOUND
+        std::cout << "Warning: Scope " << scope_id;
+        std::cout << " not found." << std::endl;
+#endif
+        return;
+    }
 
     bool recorded = false;
     if (this->already_recorded(call_id)) {
@@ -446,7 +470,7 @@ public:
         // differently and correctly insert only one exit.
         std::cout << "Warning: Exiting scope " << scope_id << " not found. ";
         std::cout << "This is likely an error leading to an incorrect trace. ";
-        std::cout << "(Scope type:" << scope_type << ")";
+        std::cout << "(Scope type:" << (int) scope_type << ")";
         std::cout << std::endl;
       }
 #endif
