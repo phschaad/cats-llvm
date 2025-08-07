@@ -129,7 +129,15 @@ bool AllocationTracker::runOnFunction(Function &F) {
           std::string varname;
           if (AllocNames.empty()) {
             // If no names found, use the function name as a fallback
-            varname = Callee->getName().str();
+            auto calleeName = Callee->getName().str();
+            if (dealloc_names.find(std::string{Callee->getName()}) ==
+                dealloc_names.end()) {
+              errs() << "Warning: No variable name found for allocation.";
+              errs() << " Using function name " << calleeName << "\n";
+              errs() << "Call instrumction: " << *Call;
+              errs() << " at " << Filename << ":" << Line << ":" << Col << "\n";
+            }
+            varname = calleeName;
           } else {
             // Use the first name found
             varname = *AllocNames.begin();

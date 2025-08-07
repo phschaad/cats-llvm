@@ -14,6 +14,13 @@
 
 #include <omp.h>
 
+#define CATS_STACK_IDENTIFIER_STRATEGY_DEFAULT      0
+#define CATS_STACK_IDENTIFIER_STRATEGY_FAST         1
+
+#ifndef CATS_STACK_IDENTIFIER_STRATEGY
+#define CATS_STACK_IDENTIFIER_STRATEGY CATS_STACK_IDENTIFIER_STRATEGY_FAST
+#endif
+
 #ifndef CATS_RUNTIME_DEBUG
 #define CATS_RUNTIME_DEBUG                          0
 #endif
@@ -61,15 +68,18 @@ struct CATS_Event {
 
 struct Allocation_Event_Args {
   char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
+  uint64_t buffer_id;
   size_t size;
 };
 
 struct Deallocation_Event_Args {
   char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
+  uint64_t buffer_id;
 };
 
 struct Access_Event_Args {
   char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
+  uint64_t buffer_id;
   bool is_write;
 };
 
@@ -84,6 +94,7 @@ struct Scope_Exit_Event_Args {
 
 struct CATS_Alloc_Info {
   char buffer_name[CATS_TRACE_BUFFER_NAME_SIZE];
+  uint64_t buffer_id;
   size_t size;
 };
 
@@ -96,7 +107,11 @@ protected:
     std::deque<uint64_t> _scope_stack;
     std::unordered_set<uint64_t> _scope_ids;
     std::map<const void *, CATS_Alloc_Info> _allocations;
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
+    std::map<uint64_t, std::vector<uint64_t>> _recorded_calls;
+#else
     std::map<uint64_t, std::vector<std::string>> _recorded_calls;
+#endif
     std::deque<CATS_Event *> _events;
 
     std::string get_stack_identifier() {
@@ -112,11 +127,34 @@ protected:
       return ss.str();
     }
 
+    uint64_t get_stack_identifier_fast() {
+      uint64_t identifier = 0;
+      bool even = true;
+      auto it = this->_scope_stack.begin();
+      while (it != this->_scope_stack.end()) {
+        if (even)
+          identifier += *it;
+        else
+          identifier -= *it;
+        even = !even;
+        ++it;
+      }
+      return identifier;
+    }
+
     bool already_recorded(uint64_t call_id) {
       auto it = this->_recorded_calls.find(call_id);
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
+      uint64_t stack_id = this->get_stack_identifier_fast();
+#else
       auto stack_id = this->get_stack_identifier();
+#endif
       if (it == this->_recorded_calls.end()) {
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
+        this->_recorded_calls[call_id] = std::vector<uint64_t>();
+#else
         this->_recorded_calls[call_id] = std::vector<std::string>();
+#endif
         this->_recorded_calls[call_id].push_back(stack_id);
         return false;
       } else {
@@ -213,9 +251,9 @@ public:
       buffer_name = "$UNKNOWN$";
 
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
-    std::cout << "Allocating " << buffer_name
+    std::cout << "Allocating " << buffer_name <<
               << " at " << address << " in " << funcname << " (" << size
-              << ") bytes" << std::endl;
+              << " bytes)" << std::endl;
 #endif
 
     strncpy(
@@ -224,6 +262,7 @@ public:
     args->buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
 
     args->size = size;
+    args->buffer_id = (size_t) address;
     this->record_event(
       call_id, CATS_EVENT_TYPE_ALLOCATION, args, funcname, filename, line, col
     );
@@ -233,6 +272,7 @@ public:
       alloc_info.buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
     );
     alloc_info.buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
+    alloc_info.buffer_id = (size_t) address;
     alloc_info.size = size;
     this->_allocations[address] = alloc_info;
   }
@@ -269,6 +309,7 @@ public:
         args->buffer_name, it->second.buffer_name,
         CATS_TRACE_BUFFER_NAME_SIZE - 1
       );
+      args->buffer_id = it->second.buffer_id;
       args->buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
 
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ALLOCATIONS
@@ -309,26 +350,36 @@ public:
 #endif
 
     char *buffer_name = nullptr;
+    uint64_t buffer_id = 0;
     auto it = this->_allocations.lower_bound(address);
     if (it != this->_allocations.end() && it->first == address) {
       buffer_name = it->second.buffer_name;
+      buffer_id = it->second.buffer_id;
     } else if (it != this->_allocations.begin()) {
       --it;
       if (address <= ((char *) it->first) + it->second.size) {
         buffer_name = it->second.buffer_name;
+        buffer_id = it->second.buffer_id;
       }
     }
 
-    if (buffer_name && *buffer_name) {
+    const char *actual_buffer_name = buffer_name;
+    if (!buffer_name || !*buffer_name)
+      actual_buffer_name = "$UNKNOWN$";
+
+    if (buffer_id != 0) {
 #if CATS_RUNTIME_DEBUG && CATS_RUNTIME_PRINT_ACCESSES
-      std::cout << "Accessing " << buffer_name << std::endl;
+      std::cout << "Accessing " << actual_buffer_name << std::endl;
 #endif
 
       Access_Event_Args *args = (Access_Event_Args *) malloc(
         sizeof(Access_Event_Args)
       );
-      strncpy(args->buffer_name, buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1);
+      strncpy(
+        args->buffer_name, actual_buffer_name, CATS_TRACE_BUFFER_NAME_SIZE - 1
+      );
       args->buffer_name[CATS_TRACE_BUFFER_NAME_SIZE - 1] = '\0';
+      args->buffer_id = buffer_id;
       args->is_write = is_write;
 
       this->record_event(
@@ -513,6 +564,7 @@ public:
             ofs << ", \"type\": \"allocation\", ";
             ofs << "\"buffer_name\": \"";
             ofs << args->buffer_name << "\", ";
+            ofs << "\"buffer_id\": " << args->buffer_id << ", ";
             ofs << "\"size\": " << args->size;
             break;
           }
@@ -521,7 +573,8 @@ public:
               (Deallocation_Event_Args *) event->args;
             ofs << ", \"type\": \"deallocation\", ";
             ofs << "\"buffer_name\": \"";
-            ofs << args->buffer_name << "\"";
+            ofs << args->buffer_name << "\", ";
+            ofs << "\"buffer_id\": " << args->buffer_id;
             break;
           }
           case CATS_EVENT_TYPE_ACCESS: {
@@ -530,7 +583,8 @@ public:
             ofs << "\"mode\": ";
             ofs << (args->is_write ? "\"w\"" : "\"r\"") << ", ";
             ofs << "\"buffer_name\": \"";
-            ofs << args->buffer_name << "\"";
+            ofs << args->buffer_name << "\", ";
+            ofs << "\"buffer_id\": " << args->buffer_id;
             break;
           }
           case CATS_EVENT_TYPE_SCOPE_ENTRY: {

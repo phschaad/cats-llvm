@@ -195,7 +195,6 @@ bool processFunction(Module &M, Function &F) {
   }
 
   // Mark the function as instrumented
-  errs() << "Instrumenting function: " << F.getName() << "\n";
   F.addFnAttr("cats_function_instrumented");
 
   return true;
