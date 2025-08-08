@@ -48,10 +48,12 @@ bool LoadStoreTracker::runOnFunction(Function &F) {
       } else {
         continue;
       }
+      /*
       if (Inst->getType()->isPointerTy()) {
         llvm::errs() << "Skipping (ptr) " << *Inst << "\n";
         continue;
       }
+      */
       if (AllocaInst *ainst = dyn_cast<AllocaInst>(val)) {
         llvm::errs() << "Skipping (local alloca) " << *Inst << "\n";
         continue;

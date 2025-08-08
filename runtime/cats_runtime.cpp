@@ -16,6 +16,7 @@
 
 #define CATS_STACK_IDENTIFIER_STRATEGY_DEFAULT      0
 #define CATS_STACK_IDENTIFIER_STRATEGY_FAST         1
+#define CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST    2
 
 #ifndef CATS_STACK_IDENTIFIER_STRATEGY
 #define CATS_STACK_IDENTIFIER_STRATEGY CATS_STACK_IDENTIFIER_STRATEGY_FAST
@@ -107,8 +108,12 @@ protected:
     std::deque<uint64_t> _scope_stack;
     std::unordered_set<uint64_t> _scope_ids;
     std::map<const void *, CATS_Alloc_Info> _allocations;
-#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
-    std::map<uint64_t, std::vector<uint64_t>> _recorded_calls;
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+    std::map<uint64_t, std::unordered_set<int64_t>> _recorded_calls;
+    int64_t stack_id = 0;
+    bool stack_id_even = true;
+#elif CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
+    std::map<uint64_t, std::unordered_set<uint64_t>> _recorded_calls;
 #else
     std::map<uint64_t, std::vector<std::string>> _recorded_calls;
 #endif
@@ -146,18 +151,27 @@ protected:
       auto it = this->_recorded_calls.find(call_id);
 #if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
       uint64_t stack_id = this->get_stack_identifier_fast();
+#elif CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+      uint64_t stack_id = this->stack_id;
 #else
       auto stack_id = this->get_stack_identifier();
 #endif
       if (it == this->_recorded_calls.end()) {
-#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
-        this->_recorded_calls[call_id] = std::vector<uint64_t>();
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST || CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+        this->_recorded_calls[call_id] = std::unordered_set<uint64_t>();
+        this->_recorded_calls[call_id].insert(stack_id);
 #else
         this->_recorded_calls[call_id] = std::vector<std::string>();
-#endif
         this->_recorded_calls[call_id].push_back(stack_id);
+#endif
         return false;
       } else {
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST || CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+        auto sid_id = it->second.find(stack_id);
+        if (sid_id != it->second.end())
+          return true;
+        it->second.insert(stack_id);
+#else
         auto val = it->second;
         for (auto &v : val) {
           if (v == stack_id) {
@@ -165,6 +179,7 @@ protected:
           }
         }
         it->second.push_back(stack_id);
+#endif
       }
       return false;
     }
@@ -432,6 +447,14 @@ public:
     this->_scope_stack.push_back(scope_id);
     this->_scope_ids.insert(scope_id);
 
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+    if (this->stack_id_even)
+      this->stack_id += (scope_id >> 1);
+    else
+      this->stack_id -= (scope_id >> 1);
+    this->stack_id_even = !this->stack_id_even;
+#endif
+
     if (this->already_recorded(call_id)) {
       // If this call has already been recorded, skip the allocation
       return;
@@ -473,6 +496,14 @@ public:
         return;
     }
 
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+    if (this->stack_id_even)
+      this->stack_id -= (scope_id >> 1);
+    else
+      this->stack_id += (scope_id >> 1);
+    this->stack_id_even = !this->stack_id_even;
+#endif
+
     bool recorded = false;
     if (this->already_recorded(call_id)) {
       // If this call has already been recorded, skip the allocation
@@ -510,6 +541,20 @@ public:
 #endif
 
       this->_scope_stack.pop_back();
+      if (this->_scope_ids.erase(top) == 0) {
+#if CATS_RUNTIME_WARN_ON_SCOPE_EXIT_NOT_FOUND
+        std::cout << "Warning: Scope " << scope_id;
+        std::cout << " not found." << std::endl;
+#endif
+      } else {
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+        if (this->stack_id_even)
+          this->stack_id -= (top >> 1);
+        else
+          this->stack_id += (top >> 1);
+        this->stack_id_even = !this->stack_id_even;
+#endif
+      }
     }
 
     if (this->_scope_stack.empty() || this->_scope_stack.back() != scope_id) {
