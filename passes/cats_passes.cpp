@@ -1,3 +1,5 @@
+// Copyright (c) ETH Zurich and the cats-llvm authors. All rights reserved.
+
 #include "cats_passes.hpp"
 
 #include "llvm/Pass.h"

@@ -1,5 +1,8 @@
+// Copyright (c) ETH Zurich and the cats-llvm authors. All rights reserved.
+
 #ifndef __CATS_PASSES_HPP__
 #define __CATS_PASSES_HPP__
+
 
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/DerivedTypes.h"

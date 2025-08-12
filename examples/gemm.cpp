@@ -1,3 +1,5 @@
+// Copyright (c) ETH Zurich and the cats-llvm authors. All rights reserved.
+
 #include <iostream>
 #include <vector>
 #include <random>

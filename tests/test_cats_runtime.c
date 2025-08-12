@@ -1,3 +1,5 @@
+// Copyright (c) ETH Zurich and the cats-llvm authors. All rights reserved.
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
