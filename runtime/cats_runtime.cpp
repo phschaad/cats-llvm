@@ -19,7 +19,7 @@
 #define CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST    2
 
 #ifndef CATS_STACK_IDENTIFIER_STRATEGY
-#define CATS_STACK_IDENTIFIER_STRATEGY CATS_STACK_IDENTIFIER_STRATEGY_FAST
+#define CATS_STACK_IDENTIFIER_STRATEGY CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
 #endif
 
 #ifndef CATS_RUNTIME_DEBUG
@@ -109,9 +109,8 @@ protected:
     std::unordered_set<uint64_t> _scope_ids;
     std::map<const void *, CATS_Alloc_Info> _allocations;
 #if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
-    std::map<uint64_t, std::unordered_set<int64_t>> _recorded_calls;
-    int64_t stack_id = 0;
-    bool stack_id_even = true;
+    std::map<uint64_t, std::unordered_set<uint64_t>> _recorded_calls;
+    uint64_t stack_id = 0;
 #elif CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_FAST
     std::map<uint64_t, std::unordered_set<uint64_t>> _recorded_calls;
 #else
@@ -448,11 +447,9 @@ public:
     this->_scope_ids.insert(scope_id);
 
 #if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
-    if (this->stack_id_even)
-      this->stack_id += (scope_id >> 1);
-    else
-      this->stack_id -= (scope_id >> 1);
-    this->stack_id_even = !this->stack_id_even;
+    this->stack_id = 0;
+    for (auto &id : this->_scope_stack)
+      this->stack_id += id;
 #endif
 
     if (this->already_recorded(call_id)) {
@@ -496,14 +493,6 @@ public:
         return;
     }
 
-#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
-    if (this->stack_id_even)
-      this->stack_id -= (scope_id >> 1);
-    else
-      this->stack_id += (scope_id >> 1);
-    this->stack_id_even = !this->stack_id_even;
-#endif
-
     bool recorded = false;
     if (this->already_recorded(call_id)) {
       // If this call has already been recorded, skip the allocation
@@ -546,15 +535,12 @@ public:
         std::cout << "Warning: Scope " << scope_id;
         std::cout << " not found." << std::endl;
 #endif
-      } else {
-#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
-        if (this->stack_id_even)
-          this->stack_id -= (top >> 1);
-        else
-          this->stack_id += (top >> 1);
-        this->stack_id_even = !this->stack_id_even;
-#endif
       }
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+      this->stack_id = 0;
+      for (auto &id : this->_scope_stack)
+        this->stack_id += id;
+#endif
     }
 
     if (this->_scope_stack.empty() || this->_scope_stack.back() != scope_id) {
@@ -572,6 +558,11 @@ public:
 #endif
     } else {
       this->_scope_stack.pop_back();
+#if CATS_STACK_IDENTIFIER_STRATEGY == CATS_STACK_IDENTIFIER_STRATEGY_VERY_FAST
+      this->stack_id = 0;
+      for (auto &id : this->_scope_stack)
+        this->stack_id += id;
+#endif
     }
   }
 
