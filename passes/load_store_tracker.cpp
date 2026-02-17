@@ -1,4 +1,4 @@
-// Copyright (c) ETH Zurich and the cats-llvm authors. All rights reserved.
+// Copyright (c) ETH Zurich, the cats-llvm authors, and Lawrence Livermore National Security, LLC. All rights reserved.
 
 #include "cats_passes.hpp"
 
