@@ -1,4 +1,4 @@
-// Copyright (c) ETH Zurich and the cats-llvm authors. All rights reserved.
+// Copyright (c) ETH Zurich, the cats-llvm authors, and Lawrence Livermore National Security, LLC. All rights reserved.
 
 #ifndef __CATS_RUNTIME_H__
 #define __CATS_RUNTIME_H__
